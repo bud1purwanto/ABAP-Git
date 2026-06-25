@@ -34,6 +34,7 @@ def read_from_sap(
 
     try:
         sap_source = sap_service.read_program(sandbox, program_name)
+        program_tcode = sap_service.get_tcode_for_program(sandbox, program_name)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to read program from SAP: {exc}") from exc
 
@@ -63,6 +64,7 @@ def read_from_sap(
         diff=diff_text,
         version_id=version.id if version else None,
         parent_version_hash=version.version_hash if version else None,
+        tcode=program_tcode,
     )
 
 
@@ -97,3 +99,33 @@ def write_to_sap(payload: SapWriteRequest, db: Session = Depends(get_db)):
     db.commit()
 
     return {"status": "ok", "message": f"Program {payload.program_name} rolled back to version {version.id}"}
+
+@router.get("/{sandbox_id}/tcodes")
+def get_tcodes(sandbox_id: int, db: Session = Depends(get_db)):
+    sandbox = db.query(Sandbox).filter(Sandbox.id == sandbox_id).first()
+    if not sandbox:
+        raise HTTPException(status_code=404, detail="Sandbox not found")
+    try:
+        return {"data": sap_service.get_tcodes(sandbox)}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch T-Codes: {exc}") from exc
+
+@router.get("/{sandbox_id}/programs")
+def get_programs(sandbox_id: int, db: Session = Depends(get_db)):
+    sandbox = db.query(Sandbox).filter(Sandbox.id == sandbox_id).first()
+    if not sandbox:
+        raise HTTPException(status_code=404, detail="Sandbox not found")
+    try:
+        return {"data": sap_service.get_programs(sandbox)}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch programs: {exc}") from exc
+
+@router.get("/{sandbox_id}/program-includes")
+def get_program_includes(sandbox_id: int, program: str = Query(...), db: Session = Depends(get_db)):
+    sandbox = db.query(Sandbox).filter(Sandbox.id == sandbox_id).first()
+    if not sandbox:
+        raise HTTPException(status_code=404, detail="Sandbox not found")
+    try:
+        return {"data": sap_service.get_program_includes(sandbox, program)}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch program includes: {exc}") from exc

@@ -55,6 +55,7 @@ class SapReadResponse(BaseModel):
     diff: str
     version_id: Optional[int] = None
     parent_version_hash: Optional[str] = None
+    tcode: Optional[str] = None
 
 
 class SapWriteRequest(BaseModel):
@@ -87,6 +88,7 @@ class ProgramVersionOut(BaseModel):
     commit_message: str
     author: str
     version_hash: str
+    version_number: int
     created_at: datetime
 
     class Config:

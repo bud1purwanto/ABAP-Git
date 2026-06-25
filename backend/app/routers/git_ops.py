@@ -29,6 +29,7 @@ def commit_version(payload: CommitRequest, db: Session = Depends(get_db)):
             )
 
     version_hash = hashlib.sha256(payload.source_code.encode("utf-8")).hexdigest()[:12]
+    new_version_number = (latest_version.version_number + 1) if latest_version else 1
 
     version = ProgramVersion(
         program_name=payload.program_name,
@@ -36,6 +37,7 @@ def commit_version(payload: CommitRequest, db: Session = Depends(get_db)):
         commit_message=payload.commit_message,
         author=payload.author or "system",
         version_hash=version_hash,
+        version_number=new_version_number,
     )
     db.add(version)
 

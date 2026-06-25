@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { DiffEditor } from "@monaco-editor/react";
 
-export default function DiffViewer({ original, modified, diff }) {
+export default function DiffViewer({ original, modified, diff, sideBySide = false }) {
   const [editorTheme, setEditorTheme] = useState(() => document.documentElement.getAttribute("data-theme") || "dark");
 
   useEffect(() => {
@@ -16,7 +16,7 @@ export default function DiffViewer({ original, modified, diff }) {
     return () => observer.disconnect();
   }, []);
 
-  const hasDiff = diff && diff.trim().length > 0;
+  const hasDiff = (original || "") !== (modified || "");
 
   if (!hasDiff) {
     return (
@@ -37,7 +37,7 @@ export default function DiffViewer({ original, modified, diff }) {
         original={original}
         modified={modified}
         options={{
-          renderSideBySide: false,
+          renderSideBySide: sideBySide,
           readOnly: true,
           minimap: { enabled: false },
           scrollBeyondLastLine: false,

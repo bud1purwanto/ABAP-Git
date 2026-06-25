@@ -29,6 +29,10 @@ export const api = {
   createSandbox: (data) => request("/api/sandboxes", { method: "POST", body: JSON.stringify(data) }),
   deleteSandbox: (id) => request(`/api/sandboxes/${id}`, { method: "DELETE" }),
 
+  getTCodes: (sandboxId) => request(`/api/sap/${sandboxId}/tcodes`),
+  getPrograms: (sandboxId) => request(`/api/sap/${sandboxId}/programs`),
+  getProgramIncludes: (sandboxId, program) => request(`/api/sap/${sandboxId}/program-includes?program=${encodeURIComponent(program)}`),
+
   readFromSap: (programName, sandboxId, versionId, author) => {
     const params = new URLSearchParams({ program_name: programName, sandbox_id: sandboxId });
     if (versionId) params.append("version_id", versionId);

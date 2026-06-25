@@ -5,6 +5,8 @@ import ActivityFeed from "./ActivityFeed";
 import ConfirmModal from "./ConfirmModal";
 import LoadingSpinner from "./LoadingSpinner";
 import { useToast } from "./ToastProvider";
+import SearchableDropdown from "./SearchableDropdown";
+import CompareModal from "./CompareModal";
 
 export default function GitOperationsTab({ author }) {
   const [sandboxes, setSandboxes] = useState([]);
@@ -23,10 +25,18 @@ export default function GitOperationsTab({ author }) {
   const [parentVersionHash, setParentVersionHash] = useState(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
 
+  // SAP Metadata States
+  const [tcode, setTCode] = useState("");
+  const [sapTCodes, setSapTCodes] = useState([]);
+  const [sapPrograms, setSapPrograms] = useState([]);
+  const [sapProgramIncludes, setSapProgramIncludes] = useState([]);
+  const [isLoadingSapMeta, setIsLoadingSapMeta] = useState(false);
+
   const [activity, setActivity] = useState([]);
   const [loadingAction, setLoadingAction] = useState("");
   const [confirmRollback, setConfirmRollback] = useState(false);
   const [showCommitModal, setShowCommitModal] = useState(false);
+  const [showCompareModal, setShowCompareModal] = useState(false);
   const toast = useToast();
 
   const selectedSandbox = sandboxes.find((s) => String(s.id) === String(sandboxId));
@@ -45,6 +55,37 @@ export default function GitOperationsTab({ author }) {
       refreshPrograms()
     ]).finally(() => setIsInitialLoad(false));
   }, [author]);
+
+  // Fetch SAP Metadata when sandbox changes
+  useEffect(() => {
+    if (!sandboxId) {
+      setSapTCodes([]);
+      setSapPrograms([]);
+      return;
+    }
+    setIsLoadingSapMeta(true);
+    Promise.all([
+      api.getTCodes(sandboxId).catch(() => ({ data: [] })),
+      api.getPrograms(sandboxId).catch(() => ({ data: [] })),
+    ]).then(([tcodesRes, programsRes]) => {
+      setSapTCodes(tcodesRes.data || []);
+      setSapPrograms(programsRes.data ? programsRes.data.map((p) => p.name) : []);
+    }).finally(() => setIsLoadingSapMeta(false));
+  }, [sandboxId]);
+
+  // Fetch includes when tcode changes
+  useEffect(() => {
+    if (!tcode || !sandboxId) {
+      setSapProgramIncludes([]);
+      return;
+    }
+    const match = sapTCodes.find((t) => t.tcode === tcode);
+    if (match && match.program) {
+      api.getProgramIncludes(sandboxId, match.program)
+        .then((res) => setSapProgramIncludes(res.data || []))
+        .catch(() => setSapProgramIncludes([]));
+    }
+  }, [tcode, sandboxId, sapTCodes]);
 
   function refreshActivity() {
     return api.getActivity(50, author).then(setActivity).catch(() => {});
@@ -82,6 +123,21 @@ export default function GitOperationsTab({ author }) {
     setDbSource("");
     setDiff("");
     setCommitMessage("");
+
+    if (sapTCodes.length > 0) {
+      const match = sapTCodes.find((t) => t.program === value);
+      if (match) {
+        setTCode(match.tcode);
+      }
+    }
+  }
+
+  function handleTCodeChange(val) {
+    setTCode(val);
+    const match = sapTCodes.find((t) => t.tcode === val);
+    if (match && match.program) {
+      handleProgramChange(match.program);
+    }
   }
 
   async function handleProgramBlur() {
@@ -112,6 +168,12 @@ export default function GitOperationsTab({ author }) {
       setDbSource(res.db_source || "");
       setDiff(res.diff);
       setParentVersionHash(res.parent_version_hash);
+      
+      // Auto-fill T-Code from backend if available
+      if (res.tcode) {
+        setTCode(res.tcode);
+      }
+      
       if (!versionId && res.version_id) setSelectedVersionId(res.version_id);
     } catch (err) {
       toast.error(err.message);
@@ -216,7 +278,7 @@ export default function GitOperationsTab({ author }) {
       <p style={styles.subheading}>Pull ABAP code from SAP, compare versions, and manage rollbacks.</p>
 
       <div className="git-ops-main-column">
-        <div className="git-ops-layout" style={{ marginBottom: 20, position: "relative" }}>
+        <div className="git-ops-layout" style={{ marginBottom: 20, position: "relative", zIndex: 100 }}>
           <div className="glass-panel git-ops-programs-panel" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 280, display: "flex", flexDirection: "column", flexShrink: 0, margin: 0 }}>
           <h3 style={styles.panelTitle}>Programs</h3>
           <input
@@ -249,39 +311,82 @@ export default function GitOperationsTab({ author }) {
         </div>
 
           <div className="glass-panel" style={{ ...styles.controls, flex: 1, marginLeft: 300 }}>
-            <div className="controls-row">
+            <div className="controls-row" style={{ position: "relative", zIndex: 20 }}>
               <div style={{ flex: 1 }}>
-                <label>Sandbox</label>
-                <select value={sandboxId} onChange={(e) => setSandboxId(e.target.value)}>
-                  <option value="">Select sandbox...</option>
-                  {sandboxes.map((sb) => (
-                    <option key={sb.id} value={sb.id}>
-                      {sb.name} ({sb.environment})
-                    </option>
-                  ))}
-                </select>
+                <SearchableDropdown
+                  label="Sandbox"
+                  placeholder="Select sandbox..."
+                  value={sandboxId}
+                  onChange={(val) => setSandboxId(val)}
+                  options={sandboxes.map((sb) => ({
+                    label: `${sb.name} (${sb.environment})`,
+                    value: sb.id,
+                  }))}
+                  freeSolo={false}
+                />
               </div>
               <div style={{ flex: 1 }}>
-                <label>Version History</label>
-                <select value={selectedVersionId} onChange={(e) => handleSelectVersion(e.target.value)} disabled={history.length === 0}>
-                  {history.length === 0 && <option value="">No versions available</option>}
-                  {history.map((h) => (
-                    <option key={h.id} value={h.id}>
-                      {h.created_at ? new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(h.created_at)) : ""} — {h.author || "system"} ({h.version_hash})
-                    </option>
-                  ))}
-                </select>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <label style={{ margin: 0 }}>Version History</label>
+                  {programName && (
+                    <button 
+                      className="btn" 
+                      style={{ padding: "2px 8px", fontSize: 11, background: "rgba(99, 102, 241, 0.15)", color: "var(--accent-2)", border: "1px solid var(--accent-glow)" }}
+                      onClick={() => setShowCompareModal(true)}
+                    >
+                      🔍 Advanced Compare
+                    </button>
+                  )}
+                </div>
+                <SearchableDropdown
+                  placeholder={history.length === 0 ? "No versions available" : "Select version..."}
+                  value={selectedVersionId}
+                  onChange={(val) => handleSelectVersion(val)}
+                  options={history.map((h) => ({
+                    label: `v${h.version_number} — ${
+                      h.created_at
+                        ? new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(h.created_at))
+                        : ""
+                    } — ${h.author || "system"}`,
+                    value: h.id,
+                  }))}
+                  disabled={history.length === 0}
+                  freeSolo={false}
+                />
               </div>
             </div>
 
-            <div className="controls-row" style={{ marginTop: 8 }}>
+            <div className="controls-row" style={{ marginTop: 8, position: "relative", zIndex: 10 }}>
               <div style={{ flex: 1 }}>
-                <label>Program Name</label>
-                <input
+                <SearchableDropdown
+                  label="T-Code (Optional)"
+                  placeholder="Select or type T-Code..."
+                  value={tcode}
+                  onChange={handleTCodeChange}
+                  options={sapTCodes.map((t) => ({ label: `${t.tcode} — ${t.program}`, value: t.tcode }))}
+                  isLoading={isLoadingSapMeta}
+                  disabled={!sandboxId}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <SearchableDropdown
+                  label="Program Name"
+                  placeholder="Select or type Z_PROGRAM..."
                   value={programName}
-                  onChange={(e) => handleProgramChange(e.target.value.toUpperCase())}
-                  onBlur={handleProgramBlur}
-                  placeholder="Z_PROGRAM_NAME"
+                  onChange={(val) => {
+                    handleProgramChange(val);
+                    loadHistory(val);
+                  }}
+                  options={
+                    tcode
+                      ? [
+                          ...(sapTCodes.find((t) => t.tcode === tcode)?.program ? [sapTCodes.find((t) => t.tcode === tcode).program] : []),
+                          ...sapProgramIncludes
+                        ]
+                      : sapPrograms
+                  }
+                  isLoading={isLoadingSapMeta}
+                  disabled={!sandboxId}
                 />
               </div>
             </div>
@@ -381,6 +486,15 @@ export default function GitOperationsTab({ author }) {
           </div>
         </div>
       )}
+
+      <CompareModal
+        open={showCompareModal}
+        onClose={() => setShowCompareModal(false)}
+        programName={programName}
+        sandboxId={sandboxId}
+        history={history}
+        author={author}
+      />
     </div>
   );
 }

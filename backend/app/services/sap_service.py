@@ -94,3 +94,91 @@ def write_program(sandbox: Sandbox, program_name: str, source_code: str) -> None
             raise ValueError(f"SAP Write Error: {res.get('EV_MESSAGE')}")
     finally:
         conn.close()
+
+def get_tcodes(sandbox: Sandbox) -> list[dict]:
+    """Fetch Z* T-codes and their associated programs from TSTC."""
+    conn = _connect(sandbox)
+    try:
+        result = conn.call(
+            "RFC_READ_TABLE",
+            QUERY_TABLE="TSTC",
+            DELIMITER="|",
+            OPTIONS=[{"TEXT": "TCODE LIKE 'Z%' AND PGMNA <> ' '"}],
+            FIELDS=[{"FIELDNAME": "TCODE"}, {"FIELDNAME": "PGMNA"}],
+            ROWCOUNT=1000
+        )
+        tcodes = []
+        for row in result.get("DATA", []):
+            parts = row["WA"].split("|")
+            tcode = parts[0].strip()
+            program = parts[1].strip() if len(parts) > 1 else ""
+            if tcode:
+                tcodes.append({"tcode": tcode, "program": program})
+        return tcodes
+    finally:
+        conn.close()
+
+def get_programs(sandbox: Sandbox) -> list[dict]:
+    """Fetch all Z* programs from TRDIR."""
+    conn = _connect(sandbox)
+    try:
+        result = conn.call(
+            "RFC_READ_TABLE",
+            QUERY_TABLE="TRDIR",
+            DELIMITER="|",
+            OPTIONS=[{"TEXT": "NAME LIKE 'Z%'"}],
+            FIELDS=[{"FIELDNAME": "NAME"}],
+            ROWCOUNT=1000
+        )
+        programs = []
+        for row in result.get("DATA", []):
+            parts = row["WA"].split("|")
+            name = parts[0].strip()
+            if name:
+                programs.append({"name": name})
+        return programs
+    finally:
+        conn.close()
+
+def get_program_includes(sandbox: Sandbox, program_name: str) -> list[str]:
+    """Fetch custom Z* includes for a given master program from D010INC."""
+    conn = _connect(sandbox)
+    try:
+        result = conn.call(
+            "RFC_READ_TABLE",
+            QUERY_TABLE="D010INC",
+            DELIMITER="|",
+            OPTIONS=[{"TEXT": f"MASTER = '{program_name}' AND INCLUDE LIKE 'Z%'"}],
+            FIELDS=[{"FIELDNAME": "INCLUDE"}],
+            ROWCOUNT=100
+        )
+        includes = []
+        for row in result.get("DATA", []):
+            parts = row["WA"].split("|")
+            include_name = parts[0].strip()
+            if include_name:
+                includes.append(include_name)
+        return includes
+    finally:
+        conn.close()
+
+def get_tcode_for_program(sandbox: Sandbox, program_name: str) -> str | None:
+    """Fetch the T-Code for a specific program from TSTC, if any."""
+    conn = _connect(sandbox)
+    try:
+        result = conn.call(
+            "RFC_READ_TABLE",
+            QUERY_TABLE="TSTC",
+            DELIMITER="|",
+            OPTIONS=[{"TEXT": f"PGMNA = '{program_name}'"}],
+            FIELDS=[{"FIELDNAME": "TCODE"}],
+            ROWCOUNT=1
+        )
+        data = result.get("DATA", [])
+        if data:
+            return data[0]["WA"].split("|")[0].strip()
+        return None
+    except Exception:
+        return None
+    finally:
+        conn.close()
