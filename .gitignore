@@ -1,0 +1,49 @@
+# ==========================================
+# Frontend (React / Node.js)
+# ==========================================
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.npm/
+frontend/.eslintcache
+frontend/.env.local
+frontend/.env.*.local
+
+# ==========================================
+# Backend (Python / FastAPI)
+# ==========================================
+# Virtual environments
+backend/venv*/
+backend/env/
+backend/.env
+backend/.venv/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Pytest / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs and Databases
+*.log
+*.sqlite3
+*.db
+
+# ==========================================
+# OS & Editor Files
+# ==========================================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
