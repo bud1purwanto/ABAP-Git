@@ -120,6 +120,22 @@ export default function CompareModal({
 
   const rightOptions = getRightOptions();
 
+  const describeSource = (source) => {
+    if (source === "SAP") {
+      return { title: "Actual SAP (Live)", message: "Live source code read directly from the SAP server — not a stored commit.", meta: "" };
+    }
+    const v = history.find((h) => String(h.id) === String(source));
+    if (!v) return null;
+    return {
+      title: `v${v.version_number}`,
+      message: v.commit_message?.trim() || "No commit message.",
+      meta: `${v.author || "system"}${v.created_at ? ` · ${formatDate(v.created_at)}` : ""}`,
+    };
+  };
+
+  const leftInfo = describeSource(leftSource);
+  const rightInfo = describeSource(rightSource);
+
   // Ensure rightSource is valid when leftSource changes
   useEffect(() => {
     if (rightSource && rightOptions.length > 0) {
@@ -173,6 +189,25 @@ export default function CompareModal({
             />
           </div>
         </div>
+
+        {(leftInfo || rightInfo) && (
+          <div style={styles.commitMsgRow}>
+            <div style={styles.commitMsgBox}>
+              <div style={styles.commitMsgHeader}>
+                <span style={styles.commitMsgTitle}>💬 Left — {leftInfo?.title || "—"}</span>
+                {leftInfo?.meta && <span style={styles.commitMsgMeta}>{leftInfo.meta}</span>}
+              </div>
+              <div style={styles.commitMsgText}>{leftInfo?.message || "—"}</div>
+            </div>
+            <div style={styles.commitMsgBox}>
+              <div style={styles.commitMsgHeader}>
+                <span style={styles.commitMsgTitle}>💬 Right — {rightInfo?.title || "—"}</span>
+                {rightInfo?.meta && <span style={styles.commitMsgMeta}>{rightInfo.meta}</span>}
+              </div>
+              <div style={styles.commitMsgText}>{rightInfo?.message || "—"}</div>
+            </div>
+          </div>
+        )}
 
         <div style={styles.diffContainer}>
           {isLoading ? (
@@ -276,6 +311,39 @@ const styles = {
     padding: "8px 12px",
     borderRadius: 12,
     border: "1px solid var(--panel-border)",
+  },
+  commitMsgRow: {
+    display: "flex",
+    gap: 12,
+    padding: "12px 24px 0",
+    background: "var(--panel-bg)",
+  },
+  commitMsgBox: {
+    flex: 1,
+    minWidth: 0,
+    background: "rgba(99, 102, 241, 0.08)",
+    border: "1px solid var(--accent-glow)",
+    borderRadius: 10,
+    padding: "8px 12px",
+  },
+  commitMsgHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 4,
+    flexWrap: "wrap",
+  },
+  commitMsgTitle: { fontSize: 11.5, fontWeight: 700, color: "var(--accent-2)" },
+  commitMsgMeta: { fontSize: 10.5, color: "var(--text-muted)" },
+  commitMsgText: {
+    fontSize: 12.5,
+    color: "var(--text-primary)",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    lineHeight: 1.45,
+    maxHeight: 80,
+    overflowY: "auto",
   },
   diffContainer: {
     flex: 1,

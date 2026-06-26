@@ -304,6 +304,7 @@ export default function GitOperationsTab({ author }) {
     return <LoadingSpinner message="Loading git operations..." />;
   }
 
+  const selectedVersion = history.find((h) => String(h.id) === String(selectedVersionId));
   const isLatestVersion = history.length === 0 || (history[0] && String(selectedVersionId) === String(history[0].id));
   const hasDiff = diff && diff.trim().length > 0;
   const canCommit = !!sapSource && isLatestVersion && hasDiff;
@@ -470,6 +471,24 @@ export default function GitOperationsTab({ author }) {
         <div className="diff-viewer-wrapper" style={{ marginTop: 20 }}>
           <div className="glass-panel diff-panel" style={styles.diffPanel}>
             <h3 style={styles.panelTitle}>Diff Viewer</h3>
+            {selectedVersion && (
+              <div style={styles.commitMessageBox}>
+                <div style={styles.commitMessageHeader}>
+                  <span style={styles.commitMessageLabel}>
+                    💬 Commit Message — v{selectedVersion.version_number}
+                  </span>
+                  <span style={styles.commitMessageMeta}>
+                    {selectedVersion.author || "system"}
+                    {selectedVersion.created_at
+                      ? ` · ${new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(selectedVersion.created_at))}`
+                      : ""}
+                  </span>
+                </div>
+                <div style={styles.commitMessageText}>
+                  {selectedVersion.commit_message?.trim() || <em style={{ color: "var(--text-muted)" }}>No commit message.</em>}
+                </div>
+              </div>
+            )}
             <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
               <DiffViewer original={dbSource} modified={sapSource} diff={diff} />
             </div>
@@ -587,6 +606,33 @@ const styles = {
   },
   diffPanel: { padding: 20, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", height: "100%" },
   panelTitle: { margin: "0 0 12px", fontSize: 14, fontWeight: 600 },
+  commitMessageBox: {
+    background: "rgba(99, 102, 241, 0.08)",
+    border: "1px solid var(--accent-glow)",
+    borderRadius: 10,
+    padding: "10px 14px",
+    marginBottom: 12,
+    flexShrink: 0,
+  },
+  commitMessageHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 6,
+    flexWrap: "wrap",
+  },
+  commitMessageLabel: { fontSize: 12, fontWeight: 700, color: "var(--accent-2)" },
+  commitMessageMeta: { fontSize: 11, color: "var(--text-muted)" },
+  commitMessageText: {
+    fontSize: 13,
+    color: "var(--text-primary)",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    lineHeight: 1.5,
+    maxHeight: 120,
+    overflowY: "auto",
+  },
   modalOverlay: {
     position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
     display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
