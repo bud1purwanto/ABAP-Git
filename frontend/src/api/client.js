@@ -69,6 +69,18 @@ export const api = {
   commitVersion: (data) => request("/api/git/commit", { method: "POST", body: JSON.stringify(data) }),
   getHistory: (programName, author) => request(`/api/git/history?program_name=${encodeURIComponent(programName)}${author ? `&author=${encodeURIComponent(author)}` : ""}`),
   getVersion: (versionId) => request(`/api/git/version/${versionId}`),
+  editCommit: (versionId, requestedBy, commitMessage) =>
+    request(`/api/git/version/${versionId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ requested_by: requestedBy, commit_message: commitMessage }),
+    }),
+  deleteCommit: (versionId, requestedBy) =>
+    request(`/api/git/version/${versionId}?requested_by=${encodeURIComponent(requestedBy)}`, { method: "DELETE" }),
+  renameProgram: (oldName, newName, requestedBy) =>
+    request("/api/git/rename-program", {
+      method: "POST",
+      body: JSON.stringify({ old_name: oldName, new_name: newName, requested_by: requestedBy }),
+    }),
   listPrograms: (search, author) => {
     let url = `/api/git/programs?`;
     if (search) url += `search=${encodeURIComponent(search)}&`;

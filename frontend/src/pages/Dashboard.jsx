@@ -2,6 +2,7 @@ import { useState } from "react";
 import OverviewTab from "../components/OverviewTab";
 import SandboxesTab from "../components/SandboxesTab";
 import GitOperationsTab from "../components/GitOperationsTab";
+import GitLogTab from "../components/GitLogTab";
 import SyncTab from "../components/SyncTab";
 import CompareServerTab from "../components/CompareServerTab";
 import UsersTab from "../components/UsersTab";
@@ -11,6 +12,7 @@ import ConfirmModal from "../components/ConfirmModal";
 const TABS = [
   { id: "overview", label: "Overview", icon: "▦" },
   { id: "git", label: "Git Operations", icon: "⎇" },
+  { id: "gitlog", label: "Git Log & Setting", icon: "🗒" },
   { id: "sync", label: "Sync", icon: "⟳" },
   { id: "compare", label: "Compare Server", icon: "⇆" },
   { id: "sandboxes", label: "Server", icon: "▣" },
@@ -122,6 +124,9 @@ export default function Dashboard({ user, onLogout }) {
         </div>
         <div style={{ display: activeTab === "git" ? "block" : "none" }}>
           <GitOperationsTab author={user.username} />
+        </div>
+        <div style={{ display: activeTab === "gitlog" ? "block" : "none" }}>
+          <GitLogTab currentUser={user} />
         </div>
         <div style={{ display: activeTab === "sync" ? "block" : "none" }}>
           <SyncTab author={user.username} />
