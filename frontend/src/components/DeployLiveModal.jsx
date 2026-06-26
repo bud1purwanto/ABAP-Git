@@ -1,96 +1,257 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../api/client";
 
-export default function DeployLiveModal({ open, programName, author, deploying, onConfirm, onCancel }) {
-  const [checking, setChecking] = useState(false);
-  const [checks, setChecks] = useState([]);
-  const [hasValidated, setHasValidated] = useState(false);
-  const [validationError, setValidationError] = useState("");
+// All 4 rules in display order — backend may return fewer if it stopped early
+const ALL_RULES = [
+  { key: "multiple_logon", label: "Multiple Logon Check", icon: "👤" },
+  { key: "sap_lock", label: "SAP Lock / Edit Check", icon: "🔒" },
+  { key: "package", label: "Package Check (ZTRD)", icon: "📦" },
+  { key: "transport_request", label: "Transport Request Check", icon: "🚚" },
+];
 
+// status: "pending" | "checking" | "passed" | "failed"
+function RuleRow({ rule, status, message }) {
+  const isPending = status === "pending";
+  const isChecking = status === "checking";
+  const isPassed = status === "passed";
+  const isFailed = status === "failed";
+
+  return (
+    <div style={{
+      display: "flex",
+      alignItems: "flex-start",
+      gap: 12,
+      padding: "12px 14px",
+      borderRadius: 10,
+      marginBottom: 8,
+      border: `1px solid ${isPending ? "rgba(255,255,255,0.06)" : isFailed ? "rgba(239,68,68,0.35)" : isPassed ? "rgba(34,197,94,0.35)" : "rgba(99,102,241,0.35)"}`,
+      background: isPending
+        ? "rgba(255,255,255,0.02)"
+        : isFailed
+        ? "rgba(239,68,68,0.06)"
+        : isPassed
+        ? "rgba(34,197,94,0.06)"
+        : "rgba(99,102,241,0.08)",
+      opacity: isPending ? 0.45 : 1,
+      transition: "all 0.35s ease",
+    }}>
+      {/* Status icon */}
+      <div style={{ minWidth: 24, paddingTop: 1, fontSize: 16 }}>
+        {isChecking && <span style={styles.spinner}>⏳</span>}
+        {isPassed && <span style={{ color: "#22c55e" }}>✓</span>}
+        {isFailed && <span style={{ color: "#ef4444" }}>✗</span>}
+        {isPending && <span style={{ color: "#6b7280" }}>○</span>}
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Rule label */}
+        <div style={{
+          fontSize: 13,
+          fontWeight: 600,
+          color: isPending ? "#6b7280" : isFailed ? "#ef4444" : isPassed ? "#22c55e" : "#818cf8",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+        }}>
+          <span>{rule.icon}</span>
+          <span>{rule.label}</span>
+          {isChecking && (
+            <span style={{ fontSize: 11, color: "#818cf8", fontWeight: 400 }}>Checking...</span>
+          )}
+        </div>
+
+        {/* Message — only show once we have a result */}
+        {message && !isPending && !isChecking && (
+          <div style={{
+            fontSize: 12,
+            marginTop: 4,
+            color: isFailed ? "#fca5a5" : "#86efac",
+            lineHeight: 1.5,
+          }}>
+            {message}
+          </div>
+        )}
+
+        {/* Pending placeholder */}
+        {isPending && (
+          <div style={{ fontSize: 12, marginTop: 3, color: "#4b5563" }}>Waiting…</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function DeployLiveModal({ open, programName, versionId, author, onClose, onDeploySuccess }) {
+  const [phase, setPhase] = useState("idle"); // idle | validating | done_fail | done_ok | deploying | deployed
+  const [ruleStatuses, setRuleStatuses] = useState(() =>
+    Object.fromEntries(ALL_RULES.map((r) => [r.key, { status: "pending", message: "" }]))
+  );
+  const [deployError, setDeployError] = useState("");
+
+  // Auto-run validation whenever the modal opens
   useEffect(() => {
     if (open) {
-      runValidation();
-    } else {
-      setChecks([]);
-      setHasValidated(false);
-      setValidationError("");
+      setDeployError("");
+      setRuleStatuses(Object.fromEntries(ALL_RULES.map((r) => [r.key, { status: "pending", message: "" }])));
+      // Small delay so the modal is visible before rules start ticking
+      const t = setTimeout(() => handleValidate(), 150);
+      return () => clearTimeout(t);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  async function runValidation() {
-    setChecking(true);
-    setValidationError("");
+  async function handleValidate() {
+    setPhase("validating");
+    setDeployError("");
+
+    // Show ALL rules as pending first
+    setRuleStatuses(Object.fromEntries(ALL_RULES.map((r) => [r.key, { status: "pending", message: "" }])));
+
     try {
-      const res = await api.validateLiveDeployment(programName, author);
-      setChecks(res.checks || []);
-      setHasValidated(true);
+      // Mark first rule as "checking"
+      setRuleStatuses((prev) => ({ ...prev, multiple_logon: { status: "checking", message: "" } }));
+
+      const res = await api.validateLiveDeployment({ program_name: programName, author });
+      const checks = res.checks; // array of {key, label, passed, message}
+
+      // Animate results one by one, 450ms apart
+      for (let i = 0; i < checks.length; i++) {
+        const check = checks[i];
+        const nextKey = ALL_RULES[i + 1]?.key;
+
+        // Small delay for visual effect
+        await new Promise((resolve) => setTimeout(resolve, 400));
+
+        setRuleStatuses((prev) => {
+          const next = { ...prev, [check.key]: { status: check.passed ? "passed" : "failed", message: check.message } };
+          // If there's a next rule and current passed, mark next as "checking"
+          if (check.passed && nextKey) {
+            next[nextKey] = { status: "checking", message: "" };
+          }
+          return next;
+        });
+
+        // Stop animating if this rule failed (backend already stopped here)
+        if (!check.passed) break;
+      }
+
+      setPhase(res.all_passed ? "done_ok" : "done_fail");
     } catch (err) {
-      setValidationError(err.message);
-      setChecks([]);
-      setHasValidated(false);
-    } finally {
-      setChecking(false);
+      setDeployError(err.message || "Validation failed.");
+      setPhase("done_fail");
+    }
+  }
+
+  async function handleDeploy() {
+    setPhase("deploying");
+    try {
+      await api.deployToLive({ program_name: programName, version_id: versionId, author });
+      setPhase("deployed");
+      onDeploySuccess?.();
+    } catch (err) {
+      setDeployError(err.message || "Deployment failed.");
+      setPhase("done_fail");
     }
   }
 
   if (!open) return null;
 
-  const allPassed = hasValidated && checks.length > 0 && checks.every((c) => c.passed);
-  const canDeploy = allPassed && !checking && !deploying;
+  const isValidating = phase === "validating";
+  const isDeploying = phase === "deploying";
+  const allOk = phase === "done_ok";
+  const deployed = phase === "deployed";
 
   return (
-    <div style={styles.overlay} onClick={onCancel}>
-      <div className="glass-panel" style={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div style={styles.icon}>🚀</div>
-        <h3 style={styles.title}>Deploy to Development</h3>
-        <p style={styles.message}>
-          You are about to deploy <strong>{programName}</strong> to the Development environment.
-        </p>
+    <div style={styles.overlay} onClick={phase === "idle" ? onClose : undefined}>
+      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
 
-        <div style={styles.checksBox}>
-          {validationError && <div style={styles.fetchError}>Could not run validation: {validationError}</div>}
-
-          {!validationError &&
-            (checking && checks.length === 0 ? (
-              <div style={styles.checkRow}>
-                <span style={styles.spinner} />
-                <span style={styles.checkLabel}>Running validation checks...</span>
-              </div>
-            ) : (
-              checks.map((c) => (
-                <div key={c.key} style={styles.checkRow}>
-                  <span style={{ ...styles.statusIcon, color: c.passed ? "var(--success)" : "var(--danger)" }}>
-                    {c.passed ? "✓" : "✕"}
-                  </span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={styles.checkLabel}>{c.label}</div>
-                    <div style={{ ...styles.checkMessage, color: c.passed ? "var(--text-muted)" : "var(--danger)" }}>
-                      {c.message}
-                    </div>
-                  </div>
-                </div>
-              ))
-            ))}
+        {/* Header */}
+        <div style={styles.header}>
+          <div style={styles.headerIcon}>🚀</div>
+          <div>
+            <div style={styles.headerTitle}>Deploy to Live Development</div>
+            <div style={styles.headerSub}>
+              {programName} — validating {ALL_RULES.length} security rules
+            </div>
+          </div>
         </div>
 
-        {hasValidated && !allPassed && !checking && (
-          <button className="btn" style={{ marginBottom: 12, width: "100%" }} onClick={runValidation}>
-            ↻ Re-check
-          </button>
+        <div style={{ height: 1, background: "var(--panel-border)", margin: "16px 0" }} />
+
+        {/* Rules list */}
+        <div style={{ marginBottom: 16 }}>
+          {ALL_RULES.map((rule) => (
+            <RuleRow
+              key={rule.key}
+              rule={rule}
+              status={ruleStatuses[rule.key]?.status || "pending"}
+              message={ruleStatuses[rule.key]?.message || ""}
+            />
+          ))}
+        </div>
+
+        {/* Error banner */}
+        {deployError && (
+          <div style={styles.errorBanner}>
+            ⚠ {deployError}
+          </div>
         )}
 
+        {/* Success banner */}
+        {deployed && (
+          <div style={styles.successBanner}>
+            ✓ Program deployed successfully to Live Development!
+          </div>
+        )}
+
+        {/* Actions — always visible: Retry (left) + Deploy (right) */}
         <div style={styles.actions}>
-          <button className="btn" onClick={onCancel}>
-            Cancel
-          </button>
-          <button
-            className="btn btn-danger"
-            onClick={onConfirm}
-            disabled={!canDeploy}
-            title={!allPassed ? "All checks must pass before deploying" : ""}
-          >
-            {deploying ? "Deploying..." : checking ? "Validating..." : "Validate & Deploy"}
-          </button>
+          {deployed ? (
+            <button className="btn btn-success" style={{ flex: 1 }} onClick={onClose}>
+              ✓ Close
+            </button>
+          ) : (
+            <>
+              {/* Cancel */}
+              <button
+                className="btn"
+                onClick={onClose}
+                disabled={isDeploying}
+              >
+                Cancel
+              </button>
+
+              {/* Retry */}
+              <button
+                className="btn"
+                onClick={handleValidate}
+                disabled={isValidating || isDeploying}
+              >
+                🔄 Retry
+              </button>
+
+              {/* Deploy — only active when all rules passed */}
+              <button
+                className="btn"
+                onClick={handleDeploy}
+                disabled={!allOk || isDeploying || isValidating}
+                title={!allOk ? "All validation rules must pass first" : "Deploy to Live"}
+                style={{
+                  background: allOk && !isDeploying
+                    ? "linear-gradient(135deg, #f43f5e, #e11d48)"
+                    : "rgba(255,255,255,0.06)",
+                  color: allOk && !isDeploying ? "#fff" : "var(--text-muted)",
+                  border: allOk && !isDeploying ? "none" : "1px solid var(--panel-border)",
+                  transition: "all 0.3s ease",
+                  cursor: !allOk || isDeploying || isValidating ? "not-allowed" : "pointer",
+                  minWidth: 140,
+                }}
+              >
+                {isDeploying ? "🚀 Deploying…" : "🚀 Deploy Now"}
+              </button>
+            </>
+          )}
+
         </div>
       </div>
     </div>
@@ -99,51 +260,32 @@ export default function DeployLiveModal({ open, programName, author, deploying, 
 
 const styles = {
   overlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(2, 6, 23, 0.6)",
-    backdropFilter: "blur(4px)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1000,
-    animation: "fadeIn 0.15s ease",
+    position: "fixed", inset: 0, background: "rgba(2,6,23,0.75)",
+    backdropFilter: "blur(6px)", display: "flex", alignItems: "center",
+    justifyContent: "center", zIndex: 1000, animation: "fadeIn 0.2s ease",
   },
   modal: {
-    width: 440,
-    maxWidth: "90vw",
-    padding: "28px 28px",
-    textAlign: "center",
+    width: "100%", maxWidth: 500,
+    background: "var(--panel-bg)",
+    border: "1px solid var(--panel-border)",
+    borderRadius: 18, padding: "24px 24px 20px",
+    boxShadow: "0 32px 64px rgba(0,0,0,0.5)",
     animation: "fadeInScale 0.2s ease",
   },
-  icon: { fontSize: 28, marginBottom: 8 },
-  title: { margin: "0 0 8px", fontSize: 16 },
-  message: { color: "var(--text-secondary)", fontSize: 13.5, marginBottom: 18, lineHeight: 1.5 },
-  checksBox: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
-    textAlign: "left",
-    background: "rgba(15, 23, 42, 0.4)",
-    border: "1px solid var(--panel-border)",
-    borderRadius: 10,
-    padding: 14,
+  header: { display: "flex", alignItems: "flex-start", gap: 14 },
+  headerIcon: { fontSize: 32, lineHeight: 1 },
+  headerTitle: { fontSize: 17, fontWeight: 700, color: "var(--text-primary)", marginBottom: 3 },
+  headerSub: { fontSize: 12.5, color: "var(--text-muted)", fontFamily: "monospace" },
+  spinner: { display: "inline-block", animation: "spin 1s linear infinite" },
+  errorBanner: {
+    background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.35)",
+    borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#fca5a5",
+    marginBottom: 16, lineHeight: 1.5,
+  },
+  successBanner: {
+    background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.35)",
+    borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#86efac",
     marginBottom: 16,
-    minHeight: 60,
   },
-  checkRow: { display: "flex", gap: 10, alignItems: "flex-start" },
-  statusIcon: { fontWeight: 700, fontSize: 14, paddingTop: 1, flexShrink: 0, width: 16, textAlign: "center" },
-  checkLabel: { fontSize: 13, fontWeight: 600, color: "var(--text-primary)" },
-  checkMessage: { fontSize: 12, marginTop: 2, lineHeight: 1.4 },
-  fetchError: { color: "var(--danger)", fontSize: 13 },
-  spinner: {
-    width: 14,
-    height: 14,
-    border: "2px solid var(--panel-border)",
-    borderTopColor: "var(--accent)",
-    borderRadius: "50%",
-    animation: "spin 0.7s linear infinite",
-    flexShrink: 0,
-  },
-  actions: { display: "flex", gap: 10, justifyContent: "center" },
+  actions: { display: "flex", gap: 10, justifyContent: "flex-end" },
 };

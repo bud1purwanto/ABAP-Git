@@ -6,6 +6,8 @@ import SearchableDropdown from "./SearchableDropdown";
 import ConfirmModal from "./ConfirmModal";
 import FullscreenDiffModal from "./FullscreenDiffModal";
 import { useToast } from "./ToastProvider";
+import { useServerValidation } from "../hooks/useServerValidation";
+import ServerValidationBadge from "./ServerValidationBadge";
 
 const ENV_LABELS = { DEV: "Development", QA: "Quality Assurance", PROD: "Production" };
 
@@ -39,6 +41,25 @@ export default function SyncTab({ author }) {
   const targetSandboxes = safeSandboxes.filter((s) => s.environment === "SANDBOX");
   const selectedSource = safeSandboxes.find((s) => String(s.id) === String(sourceId));
   const selectedTarget = safeSandboxes.find((s) => String(s.id) === String(targetId));
+
+  // ── Server Validation ───────────────────────────────────────────────────────
+  // Source (DEV/QA/PROD): Multiple Logon check
+  const sourceVal = useServerValidation({
+    serverId: sourceId,
+    environment: selectedSource?.environment || "",
+    author,
+  });
+  // Target (SANDBOX): SAP Lock check — needs a program selected
+  const targetVal = useServerValidation({
+    serverId: targetId,
+    environment: selectedTarget?.environment || "",
+    programName,
+    author,
+  });
+
+  const serversOk =
+    (sourceVal.passed !== false) &&
+    (targetVal.passed !== false);
 
   useEffect(() => {
     api
@@ -196,6 +217,12 @@ export default function SyncTab({ author }) {
               }))}
               freeSolo={false}
             />
+            <ServerValidationBadge
+              checking={sourceVal.checking}
+              passed={sourceVal.passed}
+              message={sourceVal.message}
+              onRetry={sourceVal.retry}
+            />
           </div>
           <div style={{ flex: 1 }}>
             <SearchableDropdown
@@ -211,6 +238,12 @@ export default function SyncTab({ author }) {
                 value: String(sb.id),
               }))}
               freeSolo={false}
+            />
+            <ServerValidationBadge
+              checking={targetVal.checking}
+              passed={targetVal.passed}
+              message={targetVal.message}
+              onRetry={targetVal.retry}
             />
           </div>
         </div>
@@ -245,7 +278,8 @@ export default function SyncTab({ author }) {
             className="btn btn-primary"
             style={{ flex: 1 }}
             onClick={handleCompare}
-            disabled={loadingAction === "compare" || !sourceId || !targetId || !programName}
+            disabled={loadingAction === "compare" || !sourceId || !targetId || !programName || !serversOk}
+            title={!serversOk ? "Server validation failed — resolve issues above first" : ""}
           >
             {loadingAction === "compare" ? "Comparing..." : "Compare"}
           </button>
@@ -253,9 +287,11 @@ export default function SyncTab({ author }) {
             className="btn btn-success"
             style={{ flex: 1 }}
             onClick={() => setConfirmSync(true)}
-            disabled={loadingAction === "sync" || !canSync}
+            disabled={loadingAction === "sync" || !canSync || !serversOk}
             title={
-              !hasCompared
+              !serversOk
+                ? "Server validation failed — resolve issues above first"
+                : !hasCompared
                 ? "Run Compare first"
                 : identical
                 ? "Sandbox already matches the source"

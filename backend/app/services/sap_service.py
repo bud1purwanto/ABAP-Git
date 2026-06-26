@@ -234,75 +234,85 @@ def check_multiple_logon(sandbox: Sandbox, author: str | None = None) -> dict:
 
         watched = {u.upper() for u in (author, sandbox.rfc_user) if u}
         conflicting_user = None
+        conflicting_terminal = None
         for d in dialog_sessions:
             if d["username"].upper() in watched:
                 conflicting_user = d["username"]
+                conflicting_terminal = d["terminal"] or None
                 break
 
         return {
             "passed": conflicting_user is None,
             "conflicting_user": conflicting_user,
+            "conflicting_terminal": conflicting_terminal,
             "dialog_sessions": dialog_sessions,
         }
     finally:
         conn.close()
 
 
-def check_live_deployment_rules(sandbox: Sandbox, program_name: str, author: str) -> list[dict]:
+def check_live_deployment_rules_sequential(sandbox: Sandbox, program_name: str, author: str) -> list[dict]:
     """
-    Runs all 4 strict rules required before allowing deployment to Live, and returns
-    a result for EACH rule (instead of stopping at the first failure) so the caller
-    can show the user exactly which checks passed and which failed.
+    Runs rules sequentially and STOPS immediately at the first failure.
+    All rules are fail-CLOSED: if an RFC call errors out, the rule is marked as FAILED
+    (not skipped) so an unavailable RFC never silently grants access.
 
-    Returns a list of {key, label, passed, message} dicts.
+    Returns a list of {key, label, passed, message} dicts only up to the
+    last rule that was actually evaluated (remaining rules are not included).
     """
-    conn = _connect(sandbox)
     results = []
 
     def add(key, label, passed, message):
         results.append({"key": key, "label": label, "passed": passed, "message": message})
+        return passed
 
+    # ── Rule 1: Multiple Logon (fail-closed) ──────────────────────────────────
     try:
-        # Rule 1: Multiple Logon Check — see check_multiple_logon() for the full rationale.
-        try:
-            logon = check_multiple_logon(sandbox, author)
-            if logon["conflicting_user"]:
-                add("multiple_logon", "Multiple Logon Check", False,
-                    f"User {logon['conflicting_user']} currently has an active dialog session on the Live Server.")
-            else:
-                add("multiple_logon", "Multiple Logon Check", True, "No active dialog session detected.")
-        except Exception:
-            # If TH_USER_LIST is unauthorized or missing, don't block deployment on this check.
-            add("multiple_logon", "Multiple Logon Check", True, "Check skipped (RFC unavailable).")
+        logon = check_multiple_logon(sandbox, author)
+        if logon["conflicting_user"]:
+            terminal = logon.get("conflicting_terminal")
+            terminal_info = f" (PC/Terminal: {terminal})" if terminal else ""
+            add("multiple_logon", "Multiple Logon Check", False,
+                f"User '{logon['conflicting_user']}'{terminal_info} still has an active dialog session on the Live server. "
+                "Log out of SAP GUI first, then retry.")
+            return results  # STOP
+        ok = add("multiple_logon", "Multiple Logon Check", True,
+                 "No active dialog session detected.")
+    except Exception as exc:
+        add("multiple_logon", "Multiple Logon Check", False,
+            f"Cannot verify logon status (RFC unavailable: {exc}). "
+            "Deploy blocked for audit safety — contact Basis to grant TH_USER_LIST access.")
+        return results  # STOP
 
-        # Rule 2: SAP Lock Check (ENQUEUE_READ)
-        # Checks if TRDIR (or the program itself) is currently locked by someone.
+    # ── Rule 2: SAP Lock / Edit-in-progress (fail-closed) ────────────────────
+    conn = _connect(sandbox)
+    try:
         try:
             res = conn.call("ENQUEUE_READ", GNAME="TRDIR", GARG=program_name)
             locks = res.get("ENQ", [])
             if locks:
                 lock_user = locks[0].get("GUNAME", "Unknown")
-                add("sap_lock", "SAP Lock Check", False,
-                    f"Program {program_name} is currently being edited/locked by user {lock_user}.")
-            else:
-                add("sap_lock", "SAP Lock Check", True, "Program is not locked.")
-        except Exception:
-            add("sap_lock", "SAP Lock Check", True, "Check skipped (RFC unavailable).")
+                add("sap_lock", "SAP Lock / Edit Check", False,
+                    f"Program '{program_name}' is currently being edited/locked by user '{lock_user}'. "
+                    "Wait for them to finish and release the lock.")
+                return results  # STOP
+            add("sap_lock", "SAP Lock / Edit Check", True,
+                "Program is not currently locked by any user.")
+        except Exception as exc:
+            add("sap_lock", "SAP Lock / Edit Check", False,
+                f"Cannot verify lock status (RFC unavailable: {exc}). "
+                "Deploy blocked for audit safety.")
+            return results  # STOP
 
-        # Rule 3: Package Check (TADIR) — must belong to package ZTRD
+        # ── Rule 3: Package = ZTRD (fail-closed) ─────────────────────────────
         try:
             res_tadir = conn.call(
                 "RFC_READ_TABLE",
                 QUERY_TABLE="TADIR",
                 DELIMITER="|",
                 OPTIONS=[{"TEXT": f"PGMID = 'R3TR' AND OBJECT = 'PROG' AND OBJ_NAME = '{program_name}'"}],
-                # Always request OBJ_NAME back too — some RFC_READ_TABLE configurations
-                # silently ignore the OPTIONS filter (authorization restrictions, Basis
-                # version quirks), which would otherwise let an unrelated TADIR row's
-                # DEVCLASS get mistaken for this program's package. Verify the match
-                # explicitly in Python instead of trusting the SAP-side filter alone.
                 FIELDS=[{"FIELDNAME": "OBJ_NAME"}, {"FIELDNAME": "DEVCLASS"}],
-                ROWCOUNT=50
+                ROWCOUNT=50,
             )
             tadir_data = res_tadir.get("DATA", [])
             matched_devclass = None
@@ -314,64 +324,70 @@ def check_live_deployment_rules(sandbox: Sandbox, program_name: str, author: str
 
             if matched_devclass is None:
                 add("package", "Package Check (ZTRD)", False,
-                    f"Program {program_name} does not exist in the Live Server repository (TADIR).")
-            elif matched_devclass != "ZTRD":
+                    f"Program '{program_name}' was not found in the Live server's object repository (TADIR). "
+                    "It must be registered under package ZTRD before it can be deployed.")
+                return results  # STOP
+            if matched_devclass != "ZTRD":
                 add("package", "Package Check (ZTRD)", False,
-                    f"Program MUST be in package ZTRD. Current package is {matched_devclass}.")
-            else:
-                add("package", "Package Check (ZTRD)", True, "Program is in package ZTRD.")
+                    f"Program must belong to package ZTRD. "
+                    f"Current package is '{matched_devclass}'. Move it to ZTRD via SE80 / TADIR.")
+                return results  # STOP
+            add("package", "Package Check (ZTRD)", True,
+                f"Program is correctly registered under package ZTRD.")
         except Exception as exc:
-            add("package", "Package Check (ZTRD)", False, f"Could not verify package: {exc}")
+            add("package", "Package Check (ZTRD)", False,
+                f"Could not verify package (RFC error: {exc}). Deploy blocked.")
+            return results  # STOP
 
-        # Rule 4: Transport Request Check — must be tied to an OPEN (modifiable) CR
+        # ── Rule 4: Open Transport Request (fail-closed) ─────────────────────
         try:
             res_e071 = conn.call(
                 "RFC_READ_TABLE",
                 QUERY_TABLE="E071",
                 DELIMITER="|",
                 OPTIONS=[{"TEXT": f"PGMID = 'R3TR' AND OBJECT = 'PROG' AND OBJ_NAME = '{program_name}'"}],
-                # Same defensive verification as the package check above: confirm
-                # OBJ_NAME actually matches before trusting the returned TRKORR.
                 FIELDS=[{"FIELDNAME": "OBJ_NAME"}, {"FIELDNAME": "TRKORR"}],
-                ROWCOUNT=50
+                ROWCOUNT=50,
             )
-            e071_data = res_e071.get("DATA", [])
             tr_list = []
-            for row in e071_data:
+            for row in res_e071.get("DATA", []):
                 parts = row["WA"].split("|")
                 if len(parts) >= 2 and parts[0].strip().upper() == program_name.upper():
                     tr_list.append(parts[1].strip())
 
             if not tr_list:
                 add("transport_request", "Transport Request Check", False,
-                    f"Program {program_name} is not tied to any Transport Request.")
-            else:
-                tr_in_clause = ", ".join([f"'{tr}'" for tr in tr_list])
+                    f"Program '{program_name}' is not included in any Transport Request. "
+                    "Add it to an open CR via SE09 / SE10 before deploying.")
+                return results  # STOP
 
-                res_e070 = conn.call(
-                    "RFC_READ_TABLE",
-                    QUERY_TABLE="E070",
-                    DELIMITER="|",
-                    OPTIONS=[{"TEXT": f"TRKORR IN ({tr_in_clause}) AND TRSTATUS = 'D'"}],  # D = Modifiable
-                    # Request TRSTATUS back too, and verify both TRKORR membership AND
-                    # status = 'D' explicitly — don't trust the OPTIONS filter alone.
-                    FIELDS=[{"FIELDNAME": "TRKORR"}, {"FIELDNAME": "TRSTATUS"}],
-                    ROWCOUNT=50
-                )
-                e070_data = res_e070.get("DATA", [])
-                matched_tr = None
-                for row in e070_data:
-                    parts = row["WA"].split("|")
-                    if len(parts) >= 2 and parts[0].strip() in tr_list and parts[1].strip() == "D":
-                        matched_tr = parts[0].strip()
-                        break
-                if not matched_tr:
-                    add("transport_request", "Transport Request Check", False,
-                        f"Program {program_name} is not tied to an OPEN (Modifiable) Transport Request.")
-                else:
-                    add("transport_request", "Transport Request Check", True, "Tied to an open Transport Request.")
+            tr_in_clause = ", ".join([f"'{tr}'" for tr in tr_list])
+            res_e070 = conn.call(
+                "RFC_READ_TABLE",
+                QUERY_TABLE="E070",
+                DELIMITER="|",
+                OPTIONS=[{"TEXT": f"TRKORR IN ({tr_in_clause}) AND TRSTATUS = 'D'"}],
+                FIELDS=[{"FIELDNAME": "TRKORR"}, {"FIELDNAME": "TRSTATUS"}],
+                ROWCOUNT=50,
+            )
+            matched_tr = None
+            for row in res_e070.get("DATA", []):
+                parts = row["WA"].split("|")
+                if len(parts) >= 2 and parts[0].strip() in tr_list and parts[1].strip() == "D":
+                    matched_tr = parts[0].strip()
+                    break
+
+            if not matched_tr:
+                add("transport_request", "Transport Request Check", False,
+                    f"Program '{program_name}' is not in an OPEN (Modifiable) Transport Request. "
+                    f"Found CR(s): {', '.join(tr_list)} — all are already released or have an invalid status.")
+                return results  # STOP
+            add("transport_request", "Transport Request Check", True,
+                f"Program is included in open Transport Request '{matched_tr}'.")
         except Exception as exc:
-            add("transport_request", "Transport Request Check", False, f"Could not verify Transport Request: {exc}")
+            add("transport_request", "Transport Request Check", False,
+                f"Could not verify Transport Request (RFC error: {exc}). Deploy blocked.")
+            return results  # STOP
 
         return results
 

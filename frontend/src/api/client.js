@@ -37,12 +37,16 @@ export const api = {
     request(`/api/sandboxes/${id}?requested_by=${encodeURIComponent(requestedBy)}`, { method: "DELETE" }),
 
   getTCodes: (sandboxId) => request(`/api/sap/${sandboxId}/tcodes`),
+  checkLogon: (sandboxId, author) => {
+    const params = new URLSearchParams();
+    if (author) params.append("author", author);
+    return request(`/api/sap/${sandboxId}/logon-check?${params.toString()}`);
+  },
+  checkLock: (sandboxId, program) =>
+    request(`/api/sap/${sandboxId}/lock-check?program=${encodeURIComponent(program)}`),
+  validateLiveDeployment: (data) => request("/api/sap/validate_live_deployment", { method: "POST", body: JSON.stringify(data) }),
   deployToLive: (data) => request("/api/sap/deploy_live", { method: "POST", body: JSON.stringify(data) }),
-  validateLiveDeployment: (programName, author) =>
-    request("/api/sap/validate_live_deployment", {
-      method: "POST",
-      body: JSON.stringify({ program_name: programName, author }),
-    }),
+
 
   // AuthPrograms: (sandboxId) => request(`/api/sap/${sandboxId}/programs`),
   getPrograms: (sandboxId) => request(`/api/sap/${sandboxId}/programs`),

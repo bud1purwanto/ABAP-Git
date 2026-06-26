@@ -116,12 +116,25 @@ export default function Dashboard({ user, onLogout }) {
       />
 
       <main className="app-main">
-        {activeTab === "overview" && <OverviewTab username={displayName} />}
-        {activeTab === "git" && <GitOperationsTab author={user.username} />}
-        {activeTab === "sync" && <SyncTab author={user.username} />}
-        {activeTab === "compare" && <CompareServerTab />}
-        {activeTab === "sandboxes" && <SandboxesTab currentUser={user} />}
-        {activeTab === "users" && <UsersTab currentUser={user} />}
+        {/* All tabs stay mounted — hidden with CSS so state is preserved when switching */}
+        <div style={{ display: activeTab === "overview" ? "block" : "none" }}>
+          <OverviewTab username={displayName} active={activeTab === "overview"} />
+        </div>
+        <div style={{ display: activeTab === "git" ? "block" : "none" }}>
+          <GitOperationsTab author={user.username} />
+        </div>
+        <div style={{ display: activeTab === "sync" ? "block" : "none" }}>
+          <SyncTab author={user.username} />
+        </div>
+        <div style={{ display: activeTab === "compare" ? "block" : "none" }}>
+          <CompareServerTab />
+        </div>
+        <div style={{ display: activeTab === "sandboxes" ? "block" : "none" }}>
+          <SandboxesTab currentUser={user} />
+        </div>
+        <div style={{ display: activeTab === "users" ? "block" : "none" }}>
+          <UsersTab currentUser={user} />
+        </div>
       </main>
     </div>
   );

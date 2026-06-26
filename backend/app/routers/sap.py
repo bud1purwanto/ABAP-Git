@@ -119,7 +119,7 @@ def validate_live_deployment_endpoint(payload: ValidateLiveDeploymentRequest, db
         raise HTTPException(status_code=400, detail="No Development server configured. Please configure one in Servers.")
 
     try:
-        checks = sap_service.check_live_deployment_rules(live_sandbox, payload.program_name, payload.author)
+        checks = sap_service.check_live_deployment_rules_sequential(live_sandbox, payload.program_name, payload.author)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to run validation checks: {exc}") from exc
 
@@ -140,7 +140,7 @@ def deploy_to_live(payload: DeployLiveRequest, db: Session = Depends(get_db)):
 
     # 3. Re-validate Live Deployment rules server-side (never trust the client-side check alone)
     try:
-        checks = sap_service.check_live_deployment_rules(live_sandbox, payload.program_name, payload.author)
+        checks = sap_service.check_live_deployment_rules_sequential(live_sandbox, payload.program_name, payload.author)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to validate rules: {exc}")
 
@@ -352,13 +352,15 @@ def logon_check(sandbox_id: int, author: str | None = Query(default=None), db: S
             "server_name": sandbox.name,
             "passed": True,
             "conflicting_user": None,
+            "conflicting_terminal": None,
             "dialog_sessions": [],
         }
 
     try:
         result = sap_service.check_multiple_logon(sandbox, author)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to check sessions on '{sandbox.name}': {exc}") from exc
+        # Fail-closed: cannot verify → block access
+        raise HTTPException(status_code=503, detail=f"Cannot verify logon status on '{sandbox.name}': {exc}") from exc
 
     return {
         "applicable": True,
@@ -366,6 +368,30 @@ def logon_check(sandbox_id: int, author: str | None = Query(default=None), db: S
         "server_name": sandbox.name,
         **result,
     }
+
+
+@router.get("/{sandbox_id}/lock-check")
+def lock_check(sandbox_id: int, program: str = Query(...), db: Session = Depends(get_db)):
+    """Check whether a program is currently locked/edited on a sandbox server."""
+    sandbox = db.query(Sandbox).filter(Sandbox.id == sandbox_id).first()
+    if not sandbox:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    try:
+        conn = sap_service._connect(sandbox)
+        try:
+            res = conn.call("ENQUEUE_READ", GNAME="TRDIR", GARG=program)
+            locks = res.get("ENQ", [])
+            if locks:
+                lock_user = str(locks[0].get("GUNAME", "Unknown")).strip()
+                return {"passed": False, "lock_user": lock_user,
+                        "message": f"'{program}' is currently locked by '{lock_user}'."}
+            return {"passed": True, "lock_user": None, "message": f"'{program}' is not locked."}
+        finally:
+            conn.close()
+    except Exception as exc:
+        # Fail-closed
+        raise HTTPException(status_code=503, detail=f"Cannot verify lock status: {exc}") from exc
 
 
 @router.get("/{sandbox_id}/tcodes")

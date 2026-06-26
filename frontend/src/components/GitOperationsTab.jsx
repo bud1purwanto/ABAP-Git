@@ -9,6 +9,7 @@ import SearchableDropdown from "./SearchableDropdown";
 import CompareModal from "./CompareModal";
 import DeployLiveModal from "./DeployLiveModal";
 
+
 export default function GitOperationsTab({ author }) {
   const [sandboxes, setSandboxes] = useState([]);
   const [sandboxId, setSandboxId] = useState("");
@@ -269,6 +270,12 @@ export default function GitOperationsTab({ author }) {
     } finally {
       setLoadingAction("");
     }
+  }
+
+  function handleDeploySuccess() {
+    setShowDeployLiveModal(false);
+    toast.success(`🚀 ${programName} deployed to Live Development!`);
+    refreshActivity();
   }
 
   async function handleDeployLive() {
@@ -537,10 +544,10 @@ export default function GitOperationsTab({ author }) {
       <DeployLiveModal
         open={showDeployLiveModal}
         programName={programName}
+        versionId={selectedVersionId ? Number(selectedVersionId) : null}
         author={author}
-        deploying={loadingAction === "deploy"}
-        onConfirm={handleDeployLive}
-        onCancel={() => setShowDeployLiveModal(false)}
+        onClose={() => setShowDeployLiveModal(false)}
+        onDeploySuccess={handleDeploySuccess}
       />
     </div>
   );

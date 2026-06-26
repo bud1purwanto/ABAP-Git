@@ -5,6 +5,8 @@ import LoadingSpinner from "./LoadingSpinner";
 import SearchableDropdown from "./SearchableDropdown";
 import FullscreenDiffModal from "./FullscreenDiffModal";
 import { useToast } from "./ToastProvider";
+import { useServerValidation } from "../hooks/useServerValidation";
+import ServerValidationBadge from "./ServerValidationBadge";
 
 const ENV_LABELS = { SANDBOX: "Sandbox", DEV: "Development", QA: "Quality Assurance", PROD: "Production" };
 const ENV_RANK = { SANDBOX: 0, DEV: 1, QA: 2, PROD: 3 };
@@ -43,6 +45,19 @@ export default function CompareServerTab() {
   const safeSandboxes = sandboxes || [];
   const selectedLeft = safeSandboxes.find((s) => String(s.id) === String(leftId));
   const selectedRight = safeSandboxes.find((s) => String(s.id) === String(rightId));
+
+  // ── Server Validation ───────────────────────────────────────────────────────
+  // Both left & right: Multiple Logon check for non-sandbox, skip for sandbox
+  const leftVal = useServerValidation({
+    serverId: leftId,
+    environment: selectedLeft?.environment || "",
+  });
+  const rightVal = useServerValidation({
+    serverId: rightId,
+    environment: selectedRight?.environment || "",
+  });
+
+  const serversOk = (leftVal.passed !== false) && (rightVal.passed !== false);
 
   // Left can be any server. Order by hierarchy: Sandbox, DEV, QA, PROD (then name).
   const leftOptions = [...safeSandboxes]
@@ -196,6 +211,12 @@ export default function CompareServerTab() {
               options={leftOptions}
               freeSolo={false}
             />
+            <ServerValidationBadge
+              checking={leftVal.checking}
+              passed={leftVal.passed}
+              message={leftVal.message}
+              onRetry={leftVal.retry}
+            />
           </div>
           <div style={{ flex: 1 }}>
             <SearchableDropdown
@@ -209,6 +230,12 @@ export default function CompareServerTab() {
               options={rightOptions}
               disabled={rightOptions.length === 0}
               freeSolo={false}
+            />
+            <ServerValidationBadge
+              checking={rightVal.checking}
+              passed={rightVal.passed}
+              message={rightVal.message}
+              onRetry={rightVal.retry}
             />
           </div>
         </div>
@@ -243,7 +270,8 @@ export default function CompareServerTab() {
             className="btn btn-primary"
             style={{ flex: 1 }}
             onClick={handleCompare}
-            disabled={loadingAction === "compare" || !leftId || !rightId || !programName}
+            disabled={loadingAction === "compare" || !leftId || !rightId || !programName || !serversOk}
+            title={!serversOk ? "Server validation failed — resolve issues above first" : ""}
           >
             {loadingAction === "compare" ? "Comparing..." : "Compare"}
           </button>
