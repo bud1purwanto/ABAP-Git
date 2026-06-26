@@ -24,12 +24,25 @@ async function request(path, options = {}) {
 export const api = {
   login: (username, password) =>
     request("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+  changePassword: (username, currentPassword, newPassword) =>
+    request("/api/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ username, current_password: currentPassword, new_password: newPassword }),
+    }),
 
   listSandboxes: () => request("/api/sandboxes"),
   createSandbox: (data) => request("/api/sandboxes", { method: "POST", body: JSON.stringify(data) }),
   deleteSandbox: (id) => request(`/api/sandboxes/${id}`, { method: "DELETE" }),
 
   getTCodes: (sandboxId) => request(`/api/sap/${sandboxId}/tcodes`),
+  deployToLive: (data) => request("/api/sap/deploy_live", { method: "POST", body: JSON.stringify(data) }),
+  validateLiveDeployment: (programName, author) =>
+    request("/api/sap/validate_live_deployment", {
+      method: "POST",
+      body: JSON.stringify({ program_name: programName, author }),
+    }),
+
+  // AuthPrograms: (sandboxId) => request(`/api/sap/${sandboxId}/programs`),
   getPrograms: (sandboxId) => request(`/api/sap/${sandboxId}/programs`),
   getProgramIncludes: (sandboxId, program) => request(`/api/sap/${sandboxId}/program-includes?program=${encodeURIComponent(program)}`),
 
@@ -61,7 +74,23 @@ export const api = {
 
   listUsers: () => request("/api/users"),
   createUser: (data) => request("/api/users", { method: "POST", body: JSON.stringify(data) }),
-  deleteUser: (id) => request(`/api/users/${id}`, { method: "DELETE" }),
+  deleteUser: (id, requestedBy) => request(`/api/users/${id}?requested_by=${encodeURIComponent(requestedBy)}`, { method: "DELETE" }),
+  resetPassword: (id, requestedBy, newPassword) =>
+    request(`/api/users/${id}/reset-password`, {
+      method: "POST",
+      body: JSON.stringify({ requested_by: requestedBy, new_password: newPassword }),
+    }),
 
   getOverviewStats: () => request("/api/stats/overview"),
+
+  syncCompare: (sandboxId, programName) =>
+    request("/api/sap/sync/compare", {
+      method: "POST",
+      body: JSON.stringify({ sandbox_id: Number(sandboxId), program_name: programName }),
+    }),
+  syncApply: (sandboxId, programName, author) =>
+    request("/api/sap/sync/apply", {
+      method: "POST",
+      body: JSON.stringify({ sandbox_id: Number(sandboxId), program_name: programName, author }),
+    }),
 };

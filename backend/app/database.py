@@ -25,6 +25,8 @@ def run_lightweight_migrations():
     statements = [
         "ALTER TABLE sandboxes ADD COLUMN IF NOT EXISTS environment VARCHAR(20) NOT NULL DEFAULT 'DEV'",
         "ALTER TABLE sandboxes ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now()",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'developer'",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE",
     ]
     with engine.connect() as conn:
         for statement in statements:

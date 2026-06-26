@@ -12,6 +12,7 @@ class SandboxCreate(BaseModel):
     rfc_user: str
     rfc_password: str
     environment: str = "DEV"
+    is_live: bool = False
 
 
 class SandboxOut(BaseModel):
@@ -22,6 +23,7 @@ class SandboxOut(BaseModel):
     client: str
     rfc_user: str
     environment: str
+    is_live: bool
     created_at: datetime
 
     class Config:
@@ -34,18 +36,33 @@ class LoginRequest(BaseModel):
 
 
 class UserCreate(BaseModel):
+    requested_by: str
     username: str
     password: str
     git_author_name: Optional[str] = None
+    role: str = "developer"
 
 
 class UserOut(BaseModel):
     id: int
     username: str
     git_author_name: Optional[str] = None
+    role: str
+    must_change_password: bool
 
     class Config:
         from_attributes = True
+
+
+class ResetPasswordRequest(BaseModel):
+    requested_by: str
+    new_password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    username: str
+    current_password: str
+    new_password: str
 
 
 class SapReadResponse(BaseModel):
@@ -62,6 +79,7 @@ class SapWriteRequest(BaseModel):
     program_name: str
     sandbox_id: int
     version_id: int
+    author: Optional[str] = "system"
 
 
 class GenerateCommitRequest(BaseModel):

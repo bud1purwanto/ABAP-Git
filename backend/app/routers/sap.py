@@ -8,6 +8,7 @@ from app.models.sandbox import Sandbox
 from app.models.program_version import ProgramVersion
 from app.models.activity_log import ActivityLog
 from app.schemas import SapReadResponse, SapWriteRequest
+from pydantic import BaseModel
 from app.services import sap_service
 
 router = APIRouter(prefix="/api/sap", tags=["sap"])
@@ -79,18 +80,17 @@ def write_to_sap(payload: SapWriteRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Version not found")
 
     try:
-        syntax_res = sap_service.check_syntax(sandbox, payload.program_name, version.source_code)
-        if not syntax_res.get("valid"):
-            msg = syntax_res.get("message", "Syntax error")
-            line = syntax_res.get("line", 0)
-            raise HTTPException(status_code=400, detail=f"Rollback failed: Syntax error at line {line}: {msg}")
-
         sap_service.write_program(sandbox, payload.program_name, version.source_code)
+    except ValueError as exc:
+        # write_program raises ValueError for syntax errors and SAP-side write failures —
+        # surface these as a client error (400), not a generic 500.
+        raise HTTPException(status_code=400, detail=f"Rollback failed: {exc}") from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to write program to SAP: {exc}") from exc
 
     log = ActivityLog(
         action="PUSH",
+        username=payload.author or "system",
         program_name=payload.program_name,
         sandbox_name=sandbox.name,
         detail=f"Rolled back {payload.program_name} to version {version.id} on SAP sandbox '{sandbox.name}'",
@@ -99,6 +99,188 @@ def write_to_sap(payload: SapWriteRequest, db: Session = Depends(get_db)):
     db.commit()
 
     return {"status": "ok", "message": f"Program {payload.program_name} rolled back to version {version.id}"}
+
+class DeployLiveRequest(BaseModel):
+    program_name: str
+    version_id: int
+    author: str | None = "system"
+
+
+class ValidateLiveDeploymentRequest(BaseModel):
+    program_name: str
+    author: str | None = "system"
+
+
+@router.post("/validate_live_deployment")
+def validate_live_deployment_endpoint(payload: ValidateLiveDeploymentRequest, db: Session = Depends(get_db)):
+    """Dry-run check of all live-deployment rules, without writing anything to SAP."""
+    live_sandbox = db.query(Sandbox).filter(Sandbox.is_live == True).first()
+    if not live_sandbox:
+        raise HTTPException(status_code=400, detail="No Live Development server configured. Please configure one in Sandboxes.")
+
+    try:
+        checks = sap_service.check_live_deployment_rules(live_sandbox, payload.program_name, payload.author)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to run validation checks: {exc}") from exc
+
+    return {"checks": checks, "all_passed": all(c["passed"] for c in checks)}
+
+
+@router.post("/deploy_live")
+def deploy_to_live(payload: DeployLiveRequest, db: Session = Depends(get_db)):
+    # 1. Find live server
+    live_sandbox = db.query(Sandbox).filter(Sandbox.is_live == True).first()
+    if not live_sandbox:
+        raise HTTPException(status_code=400, detail="No Live Development server configured. Please configure one in Sandboxes.")
+
+    # 2. Find version
+    version = db.query(ProgramVersion).filter(ProgramVersion.id == payload.version_id).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    # 3. Re-validate Live Deployment rules server-side (never trust the client-side check alone)
+    try:
+        checks = sap_service.check_live_deployment_rules(live_sandbox, payload.program_name, payload.author)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to validate rules: {exc}")
+
+    failed = [c["message"] for c in checks if not c["passed"]]
+    if failed:
+        raise HTTPException(status_code=400, detail=" | ".join(failed))
+
+    # 4. Write to SAP (using same BAPI/logic as rollback)
+    try:
+        sap_service.write_program(live_sandbox, payload.program_name, version.source_code)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to deploy program to Live SAP: {exc}") from exc
+
+    # 5. Log Activity
+    log = ActivityLog(
+        action="DEPLOY_LIVE",
+        username=payload.author or "system",
+        program_name=payload.program_name,
+        sandbox_name=live_sandbox.name,
+        detail=f"Deployed {payload.program_name} (v{version.version_number}) to Live Server '{live_sandbox.name}'",
+    )
+    db.add(log)
+    db.commit()
+
+    return {"status": "ok", "message": f"Program {payload.program_name} successfully deployed to Live!"}
+
+class SyncCompareRequest(BaseModel):
+    sandbox_id: int
+    program_name: str
+
+
+class SyncApplyRequest(BaseModel):
+    sandbox_id: int
+    program_name: str
+    author: str | None = "system"
+
+
+def _sources_identical(a: str, b: str) -> bool:
+    """Compare two ABAP sources ignoring trailing whitespace per line (same
+    normalization used by the diff viewer) so cosmetic whitespace doesn't count."""
+    norm_a = [line.rstrip() for line in (a or "").splitlines()]
+    norm_b = [line.rstrip() for line in (b or "").splitlines()]
+    return norm_a == norm_b
+
+
+@router.post("/sync/compare")
+def sync_compare(payload: SyncCompareRequest, db: Session = Depends(get_db)):
+    """Read the same program from the Live server and from the selected sandbox so the
+    UI can show a side-by-side diff. Direction of a later sync: Live -> sandbox."""
+    live = db.query(Sandbox).filter(Sandbox.is_live == True).first()
+    if not live:
+        raise HTTPException(status_code=400, detail="No Live Development server configured. Please configure one in Servers.")
+
+    target = db.query(Sandbox).filter(Sandbox.id == payload.sandbox_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Sandbox not found")
+    if target.is_live:
+        raise HTTPException(status_code=400, detail="Cannot sync the Live server with itself. Pick a different sandbox.")
+
+    try:
+        live_source = sap_service.read_program(live, payload.program_name)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to read program from Live server: {exc}") from exc
+
+    # If the program doesn't exist yet in the sandbox, treat its source as empty so the
+    # diff shows everything as new and a sync can create it.
+    try:
+        sandbox_source = sap_service.read_program(target, payload.program_name)
+    except Exception:
+        sandbox_source = ""
+
+    return {
+        "program_name": payload.program_name,
+        "live_source": live_source,
+        "sandbox_source": sandbox_source,
+        "identical": _sources_identical(live_source, sandbox_source),
+        "live_name": live.name,
+        "sandbox_name": target.name,
+    }
+
+
+@router.post("/sync/apply")
+def sync_apply(payload: SyncApplyRequest, db: Session = Depends(get_db)):
+    """Overwrite the program in the selected sandbox with the Live server's version."""
+    live = db.query(Sandbox).filter(Sandbox.is_live == True).first()
+    if not live:
+        raise HTTPException(status_code=400, detail="No Live Development server configured.")
+
+    target = db.query(Sandbox).filter(Sandbox.id == payload.sandbox_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Sandbox not found")
+    if target.is_live:
+        raise HTTPException(status_code=400, detail="Cannot sync the Live server with itself.")
+
+    try:
+        live_source = sap_service.read_program(live, payload.program_name)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to read program from Live server: {exc}") from exc
+
+    try:
+        sandbox_source = sap_service.read_program(target, payload.program_name)
+    except Exception:
+        sandbox_source = ""
+
+    if _sources_identical(live_source, sandbox_source):
+        raise HTTPException(status_code=400, detail="Sandbox is already in sync with Live. Nothing to do.")
+
+    try:
+        sap_service.write_program(target, payload.program_name, live_source)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Sync failed: {exc}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to write program to sandbox: {exc}") from exc
+
+    log = ActivityLog(
+        action="SYNC",
+        username=payload.author or "system",
+        program_name=payload.program_name,
+        sandbox_name=target.name,
+        detail=f"Synced {payload.program_name} from Live '{live.name}' into sandbox '{target.name}'",
+    )
+    db.add(log)
+    db.commit()
+
+    return {"status": "ok", "message": f"Program {payload.program_name} synced from Live into '{target.name}'."}
+
+
+@router.get("/debug/live-user-list")
+def debug_live_user_list(db: Session = Depends(get_db)):
+    """Diagnostic endpoint: dump the raw TH_USER_LIST from the Live server so we can see
+    exactly who SAP reports as logged on. Hit this while logged OUT, then again while
+    logged IN, and compare."""
+    live_sandbox = db.query(Sandbox).filter(Sandbox.is_live == True).first()
+    if not live_sandbox:
+        raise HTTPException(status_code=400, detail="No Live Development server configured.")
+    try:
+        return sap_service.debug_user_list(live_sandbox)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to read user list: {exc}") from exc
+
 
 @router.get("/{sandbox_id}/tcodes")
 def get_tcodes(sandbox_id: int, db: Session = Depends(get_db)):

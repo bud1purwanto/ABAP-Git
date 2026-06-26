@@ -19,6 +19,14 @@ def create_sandbox(payload: SandboxCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail=f"Sandbox '{payload.name}' already exists")
 
+    if payload.is_live:
+        existing_live = db.query(Sandbox).filter(Sandbox.is_live == True).first()
+        if existing_live:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Live Development server already exists: '{existing_live.name}'. Only one is allowed."
+            )
+
     sandbox = Sandbox(**payload.model_dump())
     db.add(sandbox)
     db.commit()

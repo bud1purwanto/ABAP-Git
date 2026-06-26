@@ -142,7 +142,7 @@ export default function CompareModal({
           <button style={styles.closeBtn} onClick={onClose}>✕</button>
         </div>
 
-        <div style={styles.controlsRow}>
+        <div style={{ ...styles.controlsRow, position: "relative", zIndex: 30 }}>
           <div style={styles.controlBox}>
             <SearchableDropdown
               label="Left Side (Newer Version)"

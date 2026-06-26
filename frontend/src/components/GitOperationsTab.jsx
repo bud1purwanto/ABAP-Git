@@ -7,6 +7,7 @@ import LoadingSpinner from "./LoadingSpinner";
 import { useToast } from "./ToastProvider";
 import SearchableDropdown from "./SearchableDropdown";
 import CompareModal from "./CompareModal";
+import DeployLiveModal from "./DeployLiveModal";
 
 export default function GitOperationsTab({ author }) {
   const [sandboxes, setSandboxes] = useState([]);
@@ -37,17 +38,22 @@ export default function GitOperationsTab({ author }) {
   const [confirmRollback, setConfirmRollback] = useState(false);
   const [showCommitModal, setShowCommitModal] = useState(false);
   const [showCompareModal, setShowCompareModal] = useState(false);
+  const [showDeployLiveModal, setShowDeployLiveModal] = useState(false);
   const toast = useToast();
 
-  const selectedSandbox = sandboxes.find((s) => String(s.id) === String(sandboxId));
+  const safeSandboxes = sandboxes || [];
+  const regularSandboxes = safeSandboxes.filter((s) => !s.is_live);
+  const liveSandbox = safeSandboxes.find((s) => s.is_live);
+  const selectedSandbox = safeSandboxes.find((s) => String(s.id) === String(sandboxId));
   const isProdTarget = selectedSandbox?.environment === "PROD";
 
   useEffect(() => {
     Promise.all([
       api.listSandboxes().then((sbs) => {
         setSandboxes(sbs);
-        if (sbs.length > 0) {
-          const oldest = [...sbs].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))[0];
+        const regular = sbs.filter(s => !s.is_live);
+        if (regular.length > 0) {
+          const oldest = [...regular].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))[0];
           setSandboxId(oldest.id);
         }
       }).catch((e) => toast.error(e.message)),
@@ -253,8 +259,31 @@ export default function GitOperationsTab({ author }) {
         program_name: programName,
         sandbox_id: Number(sandboxId),
         version_id: Number(selectedVersionId),
+        author: author,
       });
       toast.success(`Rollback successful: ${programName} restored to version ${selectedVersionId} on SAP.`);
+      refreshActivity();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setLoadingAction("");
+    }
+  }
+
+  async function handleDeployLive() {
+    if (!selectedVersionId || !programName) {
+      toast.error("Select a version to deploy.");
+      return;
+    }
+    setLoadingAction("deploy");
+    try {
+      const res = await api.deployToLive({
+        program_name: programName,
+        version_id: Number(selectedVersionId),
+        author,
+      });
+      toast.success(res.message || "Deployed to Live Development successfully.");
+      setShowDeployLiveModal(false);
       refreshActivity();
     } catch (err) {
       toast.error(err.message);
@@ -273,13 +302,13 @@ export default function GitOperationsTab({ author }) {
   const canRollback = !!selectedVersionId && hasDiff;
 
   return (
-    <div style={styles.container}>
+    <div className="page-padding" style={styles.container}>
       <h2 style={styles.heading}>Git Operations</h2>
       <p style={styles.subheading}>Pull ABAP code from SAP, compare versions, and manage rollbacks.</p>
 
       <div className="git-ops-main-column">
-        <div className="git-ops-layout" style={{ marginBottom: 20, position: "relative", zIndex: 100 }}>
-          <div className="glass-panel git-ops-programs-panel" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 280, display: "flex", flexDirection: "column", flexShrink: 0, margin: 0 }}>
+        <div className="git-ops-layout" style={{ marginBottom: 20, position: "relative", zIndex: 30 }}>
+          <div className="glass-panel git-ops-programs-panel">
           <h3 style={styles.panelTitle}>Programs</h3>
           <input
             value={programSearch}
@@ -290,7 +319,7 @@ export default function GitOperationsTab({ author }) {
             placeholder="Search programs..."
             style={{ marginBottom: 12 }}
           />
-          <div style={{ ...styles.programsList, flex: 1, overflowY: "auto", minHeight: 0 }}>
+          <div style={styles.programsList}>
             {programs.length === 0 && <div style={styles.empty}>No programs committed yet.</div>}
             {programs.map((p) => (
               <button
@@ -310,17 +339,17 @@ export default function GitOperationsTab({ author }) {
           </div>
         </div>
 
-          <div className="glass-panel" style={{ ...styles.controls, flex: 1, marginLeft: 300 }}>
+          <div className="glass-panel" style={{ ...styles.controls, flex: 1, minWidth: 0 }}>
             <div className="controls-row" style={{ position: "relative", zIndex: 20 }}>
               <div style={{ flex: 1 }}>
                 <SearchableDropdown
-                  label="Sandbox"
-                  placeholder="Select sandbox..."
+                  label="Server"
+                  placeholder="Select server..."
                   value={sandboxId}
                   onChange={(val) => setSandboxId(val)}
-                  options={sandboxes.map((sb) => ({
+                  options={regularSandboxes.map((sb) => ({
                     label: `${sb.name} (${sb.environment})`,
-                    value: sb.id,
+                    value: String(sb.id),
                   }))}
                   freeSolo={false}
                 />
@@ -395,7 +424,7 @@ export default function GitOperationsTab({ author }) {
               <div style={styles.prodWarning}>⚠ Target sandbox is <strong>PRODUCTION</strong>. Operations here affect a live system.</div>
             )}
 
-            <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+            <div className="git-ops-actions-row" style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleFetch} disabled={loadingAction === "fetch"}>
                 {loadingAction === "fetch" ? "Fetching..." : "Fetch Code from SAP"}
               </button>
@@ -417,11 +446,20 @@ export default function GitOperationsTab({ author }) {
               >
                 {loadingAction === "rollback" ? "Rolling back..." : "Rollback & Pull to SAP"}
               </button>
+              <button
+              className="btn"
+              disabled={!selectedVersionId || !liveSandbox}
+              onClick={() => setShowDeployLiveModal(true)}
+              title={!liveSandbox ? "No Live Development server configured" : "Deploy selected version to Live Development"}
+              style={{ flex: 1, background: "rgba(245, 158, 11, 0.12)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.35)" }}
+            >
+              🚀 Deploy to Live Development
+            </button>
             </div>
           </div>
         </div>
 
-        <div style={{ marginTop: 20, height: 600 }}>
+        <div className="diff-viewer-wrapper" style={{ marginTop: 20 }}>
           <div className="glass-panel diff-panel" style={styles.diffPanel}>
             <h3 style={styles.panelTitle}>Diff Viewer</h3>
             <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
@@ -495,12 +533,20 @@ export default function GitOperationsTab({ author }) {
         history={history}
         author={author}
       />
+      <DeployLiveModal
+        open={showDeployLiveModal}
+        programName={programName}
+        author={author}
+        deploying={loadingAction === "deploy"}
+        onConfirm={handleDeployLive}
+        onCancel={() => setShowDeployLiveModal(false)}
+      />
     </div>
   );
 }
 
 const styles = {
-  container: { padding: "24px 28px", animation: "fadeIn 0.3s ease" },
+  container: { animation: "fadeIn 0.3s ease" },
   heading: { margin: 0, fontSize: 22, fontWeight: 700 },
   subheading: { color: "var(--text-secondary)", fontSize: 13.5, marginTop: 4, marginBottom: 20 },
   programsList: { display: "flex", flexDirection: "column", gap: 6, flex: 1, overflowY: "auto", minHeight: 0, paddingRight: 8 },

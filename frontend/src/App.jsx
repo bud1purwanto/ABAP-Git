@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import ForceChangePassword from "./pages/ForceChangePassword";
 import { ToastProvider } from "./components/ToastProvider";
 
 export default function App() {
@@ -25,9 +26,22 @@ export default function App() {
     setUser(null);
   }
 
-  return (
-    <ToastProvider>
-      {!user ? <Login onLogin={handleLogin} /> : <Dashboard user={user} onLogout={handleLogout} />}
-    </ToastProvider>
-  );
+  function handlePasswordChanged() {
+    const updated = { ...user, must_change_password: false };
+    sessionStorage.setItem("abap_git_user", JSON.stringify(updated));
+    setUser(updated);
+  }
+
+  let content;
+  if (!user) {
+    content = <Login onLogin={handleLogin} />;
+  } else if (user.must_change_password) {
+    content = (
+      <ForceChangePassword username={user.username} onDone={handlePasswordChanged} onCancel={handleLogout} />
+    );
+  } else {
+    content = <Dashboard user={user} onLogout={handleLogout} />;
+  }
+
+  return <ToastProvider>{content}</ToastProvider>;
 }

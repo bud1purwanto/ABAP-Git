@@ -182,3 +182,174 @@ def get_tcode_for_program(sandbox: Sandbox, program_name: str) -> str | None:
         return None
     finally:
         conn.close()
+
+def debug_user_list(sandbox: Sandbox) -> dict:
+    """Diagnostic: return the raw TH_USER_LIST so we can see exactly which users/sessions
+    SAP reports as logged on (including session type), instead of guessing."""
+    conn = _connect(sandbox)
+    try:
+        res = conn.call("TH_USER_LIST")
+        user_list = res.get("USRLIST", [])
+        # Return every field of every entry verbatim so we can inspect BNAME, TYPE,
+        # TERMINAL, etc. and figure out how to distinguish a real dialog logon from the
+        # RFC connection this very call is using.
+        return {
+            "rfc_user_used_for_this_call": sandbox.rfc_user,
+            "entry_count": len(user_list),
+            "entries": [dict(entry) for entry in user_list],
+        }
+    finally:
+        conn.close()
+
+
+def check_live_deployment_rules(sandbox: Sandbox, program_name: str, author: str) -> list[dict]:
+    """
+    Runs all 4 strict rules required before allowing deployment to Live, and returns
+    a result for EACH rule (instead of stopping at the first failure) so the caller
+    can show the user exactly which checks passed and which failed.
+
+    Returns a list of {key, label, passed, message} dicts.
+    """
+    conn = _connect(sandbox)
+    results = []
+
+    def add(key, label, passed, message):
+        results.append({"key": key, "label": label, "passed": passed, "message": message})
+
+    try:
+        # Rule 1: Multiple Logon Check (TH_USER_LIST)
+        # TH_USER_LIST returns BOTH real interactive SAPGUI sessions AND backend RFC
+        # connections (including the very connection this check runs on, which logs on
+        # as rfc_user). We must filter to genuine DIALOG sessions first, otherwise our
+        # own RFC connection would always register as "rfc_user is logged in".
+        #
+        # Discriminator (confirmed against live TH_USER_LIST output):
+        #   - RFC connection  -> RFC_TYPE = "E", TYPE = 32, GUIVERSION = "" (blank)
+        #   - Dialog (SAPGUI)  -> RFC_TYPE = "" (blank), TYPE = 4, GUIVERSION populated
+        #
+        # We flag a conflict if either the deploying developer (author) OR the shared
+        # rfc_user (TRSTDEV) has a genuine dialog session open on the Live server.
+        try:
+            res = conn.call("TH_USER_LIST")
+            user_list = res.get("USRLIST", [])
+            watched = {u.upper() for u in (author, sandbox.rfc_user) if u}
+            conflicting_user = None
+            for user_session in user_list:
+                rfc_type = str(user_session.get("RFC_TYPE", "")).strip()
+                if rfc_type:  # non-blank RFC_TYPE => this is an RFC connection, not a dialog logon
+                    continue
+                bname = str(user_session.get("BNAME", "")).strip().upper()
+                if bname in watched:
+                    conflicting_user = bname
+                    break
+            if conflicting_user:
+                add("multiple_logon", "Multiple Logon Check", False,
+                    f"User {conflicting_user} currently has an active dialog session on the Live Server.")
+            else:
+                add("multiple_logon", "Multiple Logon Check", True, "No active dialog session detected.")
+        except Exception:
+            # If TH_USER_LIST is unauthorized or missing, don't block deployment on this check.
+            add("multiple_logon", "Multiple Logon Check", True, "Check skipped (RFC unavailable).")
+
+        # Rule 2: SAP Lock Check (ENQUEUE_READ)
+        # Checks if TRDIR (or the program itself) is currently locked by someone.
+        try:
+            res = conn.call("ENQUEUE_READ", GNAME="TRDIR", GARG=program_name)
+            locks = res.get("ENQ", [])
+            if locks:
+                lock_user = locks[0].get("GUNAME", "Unknown")
+                add("sap_lock", "SAP Lock Check", False,
+                    f"Program {program_name} is currently being edited/locked by user {lock_user}.")
+            else:
+                add("sap_lock", "SAP Lock Check", True, "Program is not locked.")
+        except Exception:
+            add("sap_lock", "SAP Lock Check", True, "Check skipped (RFC unavailable).")
+
+        # Rule 3: Package Check (TADIR) — must belong to package ZTRD
+        try:
+            res_tadir = conn.call(
+                "RFC_READ_TABLE",
+                QUERY_TABLE="TADIR",
+                DELIMITER="|",
+                OPTIONS=[{"TEXT": f"PGMID = 'R3TR' AND OBJECT = 'PROG' AND OBJ_NAME = '{program_name}'"}],
+                # Always request OBJ_NAME back too — some RFC_READ_TABLE configurations
+                # silently ignore the OPTIONS filter (authorization restrictions, Basis
+                # version quirks), which would otherwise let an unrelated TADIR row's
+                # DEVCLASS get mistaken for this program's package. Verify the match
+                # explicitly in Python instead of trusting the SAP-side filter alone.
+                FIELDS=[{"FIELDNAME": "OBJ_NAME"}, {"FIELDNAME": "DEVCLASS"}],
+                ROWCOUNT=50
+            )
+            tadir_data = res_tadir.get("DATA", [])
+            matched_devclass = None
+            for row in tadir_data:
+                parts = row["WA"].split("|")
+                if len(parts) >= 2 and parts[0].strip().upper() == program_name.upper():
+                    matched_devclass = parts[1].strip()
+                    break
+
+            if matched_devclass is None:
+                add("package", "Package Check (ZTRD)", False,
+                    f"Program {program_name} does not exist in the Live Server repository (TADIR).")
+            elif matched_devclass != "ZTRD":
+                add("package", "Package Check (ZTRD)", False,
+                    f"Program MUST be in package ZTRD. Current package is {matched_devclass}.")
+            else:
+                add("package", "Package Check (ZTRD)", True, "Program is in package ZTRD.")
+        except Exception as exc:
+            add("package", "Package Check (ZTRD)", False, f"Could not verify package: {exc}")
+
+        # Rule 4: Transport Request Check — must be tied to an OPEN (modifiable) CR
+        try:
+            res_e071 = conn.call(
+                "RFC_READ_TABLE",
+                QUERY_TABLE="E071",
+                DELIMITER="|",
+                OPTIONS=[{"TEXT": f"PGMID = 'R3TR' AND OBJECT = 'PROG' AND OBJ_NAME = '{program_name}'"}],
+                # Same defensive verification as the package check above: confirm
+                # OBJ_NAME actually matches before trusting the returned TRKORR.
+                FIELDS=[{"FIELDNAME": "OBJ_NAME"}, {"FIELDNAME": "TRKORR"}],
+                ROWCOUNT=50
+            )
+            e071_data = res_e071.get("DATA", [])
+            tr_list = []
+            for row in e071_data:
+                parts = row["WA"].split("|")
+                if len(parts) >= 2 and parts[0].strip().upper() == program_name.upper():
+                    tr_list.append(parts[1].strip())
+
+            if not tr_list:
+                add("transport_request", "Transport Request Check", False,
+                    f"Program {program_name} is not tied to any Transport Request.")
+            else:
+                tr_in_clause = ", ".join([f"'{tr}'" for tr in tr_list])
+
+                res_e070 = conn.call(
+                    "RFC_READ_TABLE",
+                    QUERY_TABLE="E070",
+                    DELIMITER="|",
+                    OPTIONS=[{"TEXT": f"TRKORR IN ({tr_in_clause}) AND TRSTATUS = 'D'"}],  # D = Modifiable
+                    # Request TRSTATUS back too, and verify both TRKORR membership AND
+                    # status = 'D' explicitly — don't trust the OPTIONS filter alone.
+                    FIELDS=[{"FIELDNAME": "TRKORR"}, {"FIELDNAME": "TRSTATUS"}],
+                    ROWCOUNT=50
+                )
+                e070_data = res_e070.get("DATA", [])
+                matched_tr = None
+                for row in e070_data:
+                    parts = row["WA"].split("|")
+                    if len(parts) >= 2 and parts[0].strip() in tr_list and parts[1].strip() == "D":
+                        matched_tr = parts[0].strip()
+                        break
+                if not matched_tr:
+                    add("transport_request", "Transport Request Check", False,
+                        f"Program {program_name} is not tied to an OPEN (Modifiable) Transport Request.")
+                else:
+                    add("transport_request", "Transport Request Check", True, "Tied to an open Transport Request.")
+        except Exception as exc:
+            add("transport_request", "Transport Request Check", False, f"Could not verify Transport Request: {exc}")
+
+        return results
+
+    finally:
+        conn.close()

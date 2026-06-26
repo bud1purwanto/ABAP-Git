@@ -24,8 +24,8 @@ def overview(db: Session = Depends(get_db)):
         db.query(func.count(ProgramVersion.id)).filter(ProgramVersion.created_at >= today_start).scalar() or 0
     )
 
-    recent_activity = db.query(ActivityLog).order_by(ActivityLog.created_at.desc()).limit(5).all()
-    recent_commits = db.query(ProgramVersion).order_by(ProgramVersion.created_at.desc()).limit(5).all()
+    recent_activity = db.query(ActivityLog).order_by(ActivityLog.created_at.desc()).limit(15).all()
+    recent_commits = db.query(ProgramVersion).order_by(ProgramVersion.created_at.desc()).limit(15).all()
 
     return OverviewStats(
         total_sandboxes=total_sandboxes,

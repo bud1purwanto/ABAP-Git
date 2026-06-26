@@ -1,11 +1,37 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import Base, engine, run_lightweight_migrations
+from app.database import Base, SessionLocal, engine, run_lightweight_migrations
+from app.models.user import User
 from app.routers import sandboxes, sap, ai, git_ops, auth, activity, users, stats
+from app.services.security import hash_password
 
 Base.metadata.create_all(bind=engine)
 run_lightweight_migrations()
+
+
+def seed_super_admin():
+    """Ensure the initial super admin account exists. Safe to run on every startup —
+    it only inserts the row if a user with this username doesn't already exist."""
+    db = SessionLocal()
+    try:
+        existing = db.query(User).filter(User.username == "TRSTDEV").first()
+        if not existing:
+            db.add(
+                User(
+                    username="TRSTDEV",
+                    password=hash_password("ronin03"),
+                    git_author_name="Super Admin",
+                    role="super_admin",
+                    must_change_password=False,
+                )
+            )
+            db.commit()
+    finally:
+        db.close()
+
+
+seed_super_admin()
 
 app = FastAPI(title="ABAP Git and Versioning Middleware")
 

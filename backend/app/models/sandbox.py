@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, Integer, String, DateTime, Boolean
 from sqlalchemy.sql import func
 from datetime import datetime
 
@@ -16,4 +16,5 @@ class Sandbox(Base):
     rfc_user = Column(String(100), nullable=False)
     rfc_password = Column(String(255), nullable=False)
     environment = Column(String(20), nullable=False, default="DEV")
+    is_live = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)

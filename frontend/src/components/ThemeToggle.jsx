@@ -19,35 +19,22 @@ export default function ThemeToggle() {
     document.documentElement.setAttribute("data-theme", getInitialTheme());
   }, []);
 
+  const isLight = theme === "light";
   const toggle = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
 
   return (
     <button
       onClick={toggle}
-      title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
-      style={styles.btn}
+      title={isLight ? "Switch to Dark Mode" : "Switch to Light Mode"}
+      aria-label="Toggle color theme"
+      className="theme-toggle"
+      data-active={isLight ? "light" : "dark"}
     >
-      <span style={styles.icon}>{theme === "dark" ? "☀" : "🌙"}</span>
+      <span className="theme-toggle-track">
+        <span className="theme-toggle-icon theme-toggle-icon-sun">☀</span>
+        <span className="theme-toggle-icon theme-toggle-icon-moon">🌙</span>
+        <span className="theme-toggle-knob" />
+      </span>
     </button>
   );
 }
-
-const styles = {
-  btn: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: 34,
-    height: 34,
-    borderRadius: "50%",
-    background: "rgba(99, 102, 241, 0.12)",
-    border: "1px solid var(--panel-border)",
-    cursor: "pointer",
-    transition: "all 0.2s ease",
-    flexShrink: 0,
-  },
-  icon: {
-    fontSize: 16,
-    lineHeight: 1,
-  },
-};

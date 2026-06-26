@@ -15,10 +15,11 @@ const ACTION_COLORS = {
   PUSH: "var(--danger)",
   COMMIT: "var(--success)",
   DELETE: "var(--text-muted)",
+  DEPLOY_LIVE: "#f43f5e",
 };
 
 const CARDS = [
-  { key: "total_sandboxes", label: "Sandboxes", icon: "▣" },
+  { key: "total_sandboxes", label: "Servers", icon: "▣" },
   { key: "total_programs", label: "Programs Versioned", icon: "⌬" },
   { key: "total_commits", label: "Total Commits", icon: "⎇" },
   { key: "commits_today", label: "Commits Today", icon: "◷" },
@@ -40,11 +41,11 @@ export default function OverviewTab({ username }) {
   }
 
   return (
-    <div style={styles.container}>
+    <div className="page-padding" style={styles.container}>
       <h2 style={styles.heading}>Welcome back, {username}</h2>
       <p style={styles.subheading}>Here's what's happening across your ABAP Git middleware.</p>
 
-      <div style={styles.cardGrid}>
+      <div className="stats-card-grid">
         {CARDS.map((c) => (
           <div key={c.key} className="glass-panel" style={styles.card}>
             <div style={styles.cardIcon}>{c.icon}</div>
@@ -106,10 +107,9 @@ export default function OverviewTab({ username }) {
 }
 
 const styles = {
-  container: { padding: "24px 28px", animation: "fadeIn 0.3s ease" },
+  container: { animation: "fadeIn 0.3s ease" },
   heading: { margin: 0, fontSize: 22, fontWeight: 700 },
   subheading: { color: "var(--text-secondary)", fontSize: 13.5, marginTop: 4, marginBottom: 24 },
-  cardGrid: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 },
   card: { padding: "20px 22px", display: "flex", flexDirection: "column", gap: 6 },
   cardIcon: {
     fontSize: 18,

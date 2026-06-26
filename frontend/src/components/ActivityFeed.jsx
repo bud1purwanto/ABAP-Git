@@ -30,7 +30,7 @@ export default function ActivityFeed({ activity, history }) {
   }
 
   return (
-    <div style={styles.grid}>
+    <div className="activity-grid">
       <div className="glass-panel" style={styles.panel}>
         <h3 style={styles.title}>Commit History</h3>
         {history.length === 0 && <div style={styles.empty}>No commits yet for this program.</div>}
@@ -74,7 +74,6 @@ export default function ActivityFeed({ activity, history }) {
 }
 
 const styles = {
-  grid: { display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 20, marginTop: 20 },
   panel: { padding: 20, maxHeight: 320, overflowY: "auto" },
   title: { margin: "0 0 14px", fontSize: 14, fontWeight: 600 },
   empty: { color: "var(--text-muted)", fontSize: 13, padding: "12px 0" },

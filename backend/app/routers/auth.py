@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User
-from app.schemas import LoginRequest
+from app.schemas import ChangePasswordRequest, LoginRequest
 from app.services.security import hash_password, is_hashed, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -23,4 +23,22 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         "status": "ok",
         "username": user.username,
         "git_author_name": user.git_author_name,
+        "role": user.role,
+        "must_change_password": user.must_change_password,
     }
+
+
+@router.post("/change-password")
+def change_password(payload: ChangePasswordRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == payload.username).first()
+    if not user or not verify_password(payload.current_password, user.password):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    if len(payload.new_password) < 4:
+        raise HTTPException(status_code=400, detail="New password is too short")
+
+    user.password = hash_password(payload.new_password)
+    user.must_change_password = False
+    db.commit()
+
+    return {"status": "ok", "message": "Password changed successfully."}
