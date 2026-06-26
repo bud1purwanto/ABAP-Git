@@ -42,9 +42,9 @@ export default function DeployLiveModal({ open, programName, author, deploying, 
     <div style={styles.overlay} onClick={onCancel}>
       <div className="glass-panel" style={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div style={styles.icon}>🚀</div>
-        <h3 style={styles.title}>Deploy to Live Development</h3>
+        <h3 style={styles.title}>Deploy to Development</h3>
         <p style={styles.message}>
-          You are about to deploy <strong>{programName}</strong> to the Live Development environment.
+          You are about to deploy <strong>{programName}</strong> to the Development environment.
         </p>
 
         <div style={styles.checksBox}>

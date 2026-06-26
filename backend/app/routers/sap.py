@@ -114,9 +114,9 @@ class ValidateLiveDeploymentRequest(BaseModel):
 @router.post("/validate_live_deployment")
 def validate_live_deployment_endpoint(payload: ValidateLiveDeploymentRequest, db: Session = Depends(get_db)):
     """Dry-run check of all live-deployment rules, without writing anything to SAP."""
-    live_sandbox = db.query(Sandbox).filter(Sandbox.is_live == True).first()
+    live_sandbox = db.query(Sandbox).filter(Sandbox.environment == "DEV").first()
     if not live_sandbox:
-        raise HTTPException(status_code=400, detail="No Live Development server configured. Please configure one in Sandboxes.")
+        raise HTTPException(status_code=400, detail="No Development server configured. Please configure one in Servers.")
 
     try:
         checks = sap_service.check_live_deployment_rules(live_sandbox, payload.program_name, payload.author)
@@ -129,9 +129,9 @@ def validate_live_deployment_endpoint(payload: ValidateLiveDeploymentRequest, db
 @router.post("/deploy_live")
 def deploy_to_live(payload: DeployLiveRequest, db: Session = Depends(get_db)):
     # 1. Find live server
-    live_sandbox = db.query(Sandbox).filter(Sandbox.is_live == True).first()
+    live_sandbox = db.query(Sandbox).filter(Sandbox.environment == "DEV").first()
     if not live_sandbox:
-        raise HTTPException(status_code=400, detail="No Live Development server configured. Please configure one in Sandboxes.")
+        raise HTTPException(status_code=400, detail="No Development server configured. Please configure one in Servers.")
 
     # 2. Find version
     version = db.query(ProgramVersion).filter(ProgramVersion.id == payload.version_id).first()
@@ -168,12 +168,14 @@ def deploy_to_live(payload: DeployLiveRequest, db: Session = Depends(get_db)):
     return {"status": "ok", "message": f"Program {payload.program_name} successfully deployed to Live!"}
 
 class SyncCompareRequest(BaseModel):
-    sandbox_id: int
+    source_id: int
+    target_id: int
     program_name: str
 
 
 class SyncApplyRequest(BaseModel):
-    sandbox_id: int
+    source_id: int
+    target_id: int
     program_name: str
     author: str | None = "system"
 
@@ -186,24 +188,34 @@ def _sources_identical(a: str, b: str) -> bool:
     return norm_a == norm_b
 
 
+def _resolve_sync_servers(db: Session, source_id: int, target_id: int):
+    """Validate and return (source, target) for a sync. The source must be a non-sandbox
+    server (DEV/QA/PROD), and the target must be a SANDBOX server."""
+    source = db.query(Sandbox).filter(Sandbox.id == source_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source server not found")
+    target = db.query(Sandbox).filter(Sandbox.id == target_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Target sandbox not found")
+    if source.environment == "SANDBOX":
+        raise HTTPException(status_code=400, detail="Sync source must be a Development, QA, or Production server.")
+    if target.environment != "SANDBOX":
+        raise HTTPException(status_code=400, detail="Sync target must be a sandbox.")
+    if source.id == target.id:
+        raise HTTPException(status_code=400, detail="Source and target must be different servers.")
+    return source, target
+
+
 @router.post("/sync/compare")
 def sync_compare(payload: SyncCompareRequest, db: Session = Depends(get_db)):
-    """Read the same program from the Live server and from the selected sandbox so the
-    UI can show a side-by-side diff. Direction of a later sync: Live -> sandbox."""
-    live = db.query(Sandbox).filter(Sandbox.is_live == True).first()
-    if not live:
-        raise HTTPException(status_code=400, detail="No Live Development server configured. Please configure one in Servers.")
-
-    target = db.query(Sandbox).filter(Sandbox.id == payload.sandbox_id).first()
-    if not target:
-        raise HTTPException(status_code=404, detail="Sandbox not found")
-    if target.is_live:
-        raise HTTPException(status_code=400, detail="Cannot sync the Live server with itself. Pick a different sandbox.")
+    """Read the same program from the source server and the target sandbox so the UI can
+    show a side-by-side diff. Direction of a later sync: source -> sandbox."""
+    source, target = _resolve_sync_servers(db, payload.source_id, payload.target_id)
 
     try:
-        live_source = sap_service.read_program(live, payload.program_name)
+        source_source = sap_service.read_program(source, payload.program_name)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to read program from Live server: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"Failed to read program from '{source.name}': {exc}") from exc
 
     # If the program doesn't exist yet in the sandbox, treat its source as empty so the
     # diff shows everything as new and a sync can create it.
@@ -214,42 +226,35 @@ def sync_compare(payload: SyncCompareRequest, db: Session = Depends(get_db)):
 
     return {
         "program_name": payload.program_name,
-        "live_source": live_source,
+        "source_code": source_source,
         "sandbox_source": sandbox_source,
-        "identical": _sources_identical(live_source, sandbox_source),
-        "live_name": live.name,
+        "identical": _sources_identical(source_source, sandbox_source),
+        "source_name": source.name,
+        "source_environment": source.environment,
         "sandbox_name": target.name,
     }
 
 
 @router.post("/sync/apply")
 def sync_apply(payload: SyncApplyRequest, db: Session = Depends(get_db)):
-    """Overwrite the program in the selected sandbox with the Live server's version."""
-    live = db.query(Sandbox).filter(Sandbox.is_live == True).first()
-    if not live:
-        raise HTTPException(status_code=400, detail="No Live Development server configured.")
-
-    target = db.query(Sandbox).filter(Sandbox.id == payload.sandbox_id).first()
-    if not target:
-        raise HTTPException(status_code=404, detail="Sandbox not found")
-    if target.is_live:
-        raise HTTPException(status_code=400, detail="Cannot sync the Live server with itself.")
+    """Overwrite the program in the target sandbox with the source server's version."""
+    source, target = _resolve_sync_servers(db, payload.source_id, payload.target_id)
 
     try:
-        live_source = sap_service.read_program(live, payload.program_name)
+        source_source = sap_service.read_program(source, payload.program_name)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to read program from Live server: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"Failed to read program from '{source.name}': {exc}") from exc
 
     try:
         sandbox_source = sap_service.read_program(target, payload.program_name)
     except Exception:
         sandbox_source = ""
 
-    if _sources_identical(live_source, sandbox_source):
-        raise HTTPException(status_code=400, detail="Sandbox is already in sync with Live. Nothing to do.")
+    if _sources_identical(source_source, sandbox_source):
+        raise HTTPException(status_code=400, detail="Sandbox is already in sync with the source. Nothing to do.")
 
     try:
-        sap_service.write_program(target, payload.program_name, live_source)
+        sap_service.write_program(target, payload.program_name, source_source)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Sync failed: {exc}") from exc
     except Exception as exc:
@@ -260,12 +265,62 @@ def sync_apply(payload: SyncApplyRequest, db: Session = Depends(get_db)):
         username=payload.author or "system",
         program_name=payload.program_name,
         sandbox_name=target.name,
-        detail=f"Synced {payload.program_name} from Live '{live.name}' into sandbox '{target.name}'",
+        detail=f"Synced {payload.program_name} from {source.environment} '{source.name}' into sandbox '{target.name}'",
     )
     db.add(log)
     db.commit()
 
-    return {"status": "ok", "message": f"Program {payload.program_name} synced from Live into '{target.name}'."}
+    return {"status": "ok", "message": f"Program {payload.program_name} synced from '{source.name}' into '{target.name}'."}
+
+
+# Environment hierarchy ranks: lower number = lower in the promotion chain.
+ENV_RANK = {"SANDBOX": 0, "DEV": 1, "QA": 2, "PROD": 3}
+
+
+class CompareServersRequest(BaseModel):
+    left_id: int
+    right_id: int
+    program_name: str
+
+
+@router.post("/compare")
+def compare_servers(payload: CompareServersRequest, db: Session = Depends(get_db)):
+    """Read-only comparison of a program between two servers. The right server must be
+    strictly lower in the environment hierarchy than the left (Sandbox < DEV < QA < PROD)."""
+    left = db.query(Sandbox).filter(Sandbox.id == payload.left_id).first()
+    if not left:
+        raise HTTPException(status_code=404, detail="Left server not found")
+    right = db.query(Sandbox).filter(Sandbox.id == payload.right_id).first()
+    if not right:
+        raise HTTPException(status_code=404, detail="Right server not found")
+    if left.id == right.id:
+        raise HTTPException(status_code=400, detail="Pick two different servers to compare.")
+    if ENV_RANK.get(right.environment, 0) >= ENV_RANK.get(left.environment, 0):
+        raise HTTPException(
+            status_code=400,
+            detail="The right server must be lower in the hierarchy than the left server.",
+        )
+
+    # Tolerate a program missing on either side — show it as empty so the diff still renders.
+    try:
+        left_source = sap_service.read_program(left, payload.program_name)
+    except Exception:
+        left_source = ""
+    try:
+        right_source = sap_service.read_program(right, payload.program_name)
+    except Exception:
+        right_source = ""
+
+    return {
+        "program_name": payload.program_name,
+        "left_source": left_source,
+        "right_source": right_source,
+        "identical": _sources_identical(left_source, right_source),
+        "left_name": left.name,
+        "left_environment": left.environment,
+        "right_name": right.name,
+        "right_environment": right.environment,
+    }
 
 
 @router.get("/debug/live-user-list")
@@ -273,13 +328,44 @@ def debug_live_user_list(db: Session = Depends(get_db)):
     """Diagnostic endpoint: dump the raw TH_USER_LIST from the Live server so we can see
     exactly who SAP reports as logged on. Hit this while logged OUT, then again while
     logged IN, and compare."""
-    live_sandbox = db.query(Sandbox).filter(Sandbox.is_live == True).first()
+    live_sandbox = db.query(Sandbox).filter(Sandbox.environment == "DEV").first()
     if not live_sandbox:
-        raise HTTPException(status_code=400, detail="No Live Development server configured.")
+        raise HTTPException(status_code=400, detail="No Development server configured.")
     try:
         return sap_service.debug_user_list(live_sandbox)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to read user list: {exc}") from exc
+
+
+@router.get("/{sandbox_id}/logon-check")
+def logon_check(sandbox_id: int, author: str | None = Query(default=None), db: Session = Depends(get_db)):
+    """Check for multiple logon (active interactive sessions) on a server. DEV/QA/PROD
+    systems forbid multiple logon for audit reasons; SANDBOX servers are exempt."""
+    sandbox = db.query(Sandbox).filter(Sandbox.id == sandbox_id).first()
+    if not sandbox:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    if sandbox.environment == "SANDBOX":
+        return {
+            "applicable": False,
+            "environment": sandbox.environment,
+            "server_name": sandbox.name,
+            "passed": True,
+            "conflicting_user": None,
+            "dialog_sessions": [],
+        }
+
+    try:
+        result = sap_service.check_multiple_logon(sandbox, author)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to check sessions on '{sandbox.name}': {exc}") from exc
+
+    return {
+        "applicable": True,
+        "environment": sandbox.environment,
+        "server_name": sandbox.name,
+        **result,
+    }
 
 
 @router.get("/{sandbox_id}/tcodes")

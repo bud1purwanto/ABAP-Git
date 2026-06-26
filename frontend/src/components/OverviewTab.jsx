@@ -2,6 +2,10 @@ import { useEffect, useState } from "react";
 import LoadingSpinner from "./LoadingSpinner";
 import { api } from "../api/client";
 import { useToast } from "./ToastProvider";
+import { ENV_META } from "./EnvironmentSelect";
+
+const ENV_ORDER = ["SANDBOX", "DEV", "QA", "PROD"];
+const ENV_SHORT = { SANDBOX: "Sandbox", DEV: "DEV", QA: "QA", PROD: "PROD" };
 
 function formatDateTime(dateStr) {
   return new Intl.DateTimeFormat("en-GB", {
@@ -51,6 +55,27 @@ export default function OverviewTab({ username }) {
             <div style={styles.cardIcon}>{c.icon}</div>
             <div style={styles.cardValue}>{stats ? stats[c.key] : "—"}</div>
             <div style={styles.cardLabel}>{c.label}</div>
+            {c.key === "total_sandboxes" && stats?.servers_by_environment && (
+              <div style={styles.envBreakdown}>
+                {ENV_ORDER.map((env) => {
+                  const count = stats.servers_by_environment[env] ?? 0;
+                  const missing = env !== "SANDBOX" && count === 0;
+                  return (
+                    <span
+                      key={env}
+                      style={{
+                        ...styles.envChip,
+                        color: missing ? "var(--text-muted)" : ENV_META[env].color,
+                        borderColor: missing ? "var(--panel-border)" : `${ENV_META[env].color}55`,
+                      }}
+                      title={missing ? `No ${ENV_META[env].label} server configured` : ENV_META[env].label}
+                    >
+                      {ENV_SHORT[env]}: {missing ? "—" : count}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -72,7 +97,7 @@ export default function OverviewTab({ username }) {
                     <span style={{ fontFamily: "monospace", color: "var(--accent-2)" }}>{c.program_name}</span> - {c.commit_message}
                   </div>
                   <div style={styles.activityMeta}>
-                    {c.author} · {formatDateTime(c.created_at)}
+                    {c.author} · {c.sandbox_name || "unknown server"} · {formatDateTime(c.created_at)}
                   </div>
                 </div>
               </div>
@@ -121,6 +146,15 @@ const styles = {
   },
   cardValue: { fontSize: 28, fontWeight: 700 },
   cardLabel: { fontSize: 12.5, color: "var(--text-secondary)" },
+  envBreakdown: { display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 },
+  envChip: {
+    fontSize: 10.5,
+    fontWeight: 600,
+    padding: "2px 7px",
+    borderRadius: 5,
+    border: "1px solid",
+    background: "var(--input-bg)",
+  },
   activityPanel: { padding: 20 },
   panelTitle: { margin: "0 0 14px", fontSize: 14, fontWeight: 600 },
   empty: { color: "var(--text-muted)", fontSize: 13, padding: "12px 0" },

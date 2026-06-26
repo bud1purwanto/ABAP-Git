@@ -3,102 +3,126 @@ import { api } from "../api/client";
 import DiffViewer from "./DiffViewer";
 import LoadingSpinner from "./LoadingSpinner";
 import SearchableDropdown from "./SearchableDropdown";
-import ConfirmModal from "./ConfirmModal";
 import FullscreenDiffModal from "./FullscreenDiffModal";
 import { useToast } from "./ToastProvider";
 
-const ENV_LABELS = { DEV: "Development", QA: "Quality Assurance", PROD: "Production" };
+const ENV_LABELS = { SANDBOX: "Sandbox", DEV: "Development", QA: "Quality Assurance", PROD: "Production" };
+const ENV_RANK = { SANDBOX: 0, DEV: 1, QA: 2, PROD: 3 };
 
-export default function SyncTab({ author }) {
+function rank(sb) {
+  return ENV_RANK[sb.environment] ?? 0;
+}
+
+function serverLabel(sb) {
+  return `${sb.name} (${ENV_LABELS[sb.environment] || sb.environment})`;
+}
+
+export default function CompareServerTab() {
   const [sandboxes, setSandboxes] = useState([]);
-  const [sourceId, setSourceId] = useState("");
-  const [targetId, setTargetId] = useState("");
+  const [leftId, setLeftId] = useState("");
+  const [rightId, setRightId] = useState("");
   const [programName, setProgramName] = useState("");
   const [tcode, setTCode] = useState("");
 
-  // SAP metadata for the SOURCE server (the source of truth we pull from)
+  // SAP metadata from the LEFT (reference) server
   const [sapTCodes, setSapTCodes] = useState([]);
   const [sapPrograms, setSapPrograms] = useState([]);
   const [sapProgramIncludes, setSapProgramIncludes] = useState([]);
   const [isLoadingSapMeta, setIsLoadingSapMeta] = useState(false);
 
-  // Compare result
-  const [sourceSource, setSourceSource] = useState("");
-  const [sandboxSource, setSandboxSource] = useState("");
+  const [leftSource, setLeftSource] = useState("");
+  const [rightSource, setRightSource] = useState("");
   const [identical, setIdentical] = useState(false);
   const [hasCompared, setHasCompared] = useState(false);
 
   const [loadingAction, setLoadingAction] = useState("");
-  const [confirmSync, setConfirmSync] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const toast = useToast();
 
   const safeSandboxes = sandboxes || [];
-  const sourceServers = safeSandboxes.filter((s) => s.environment !== "SANDBOX"); // DEV/QA/PROD
-  const targetSandboxes = safeSandboxes.filter((s) => s.environment === "SANDBOX");
-  const selectedSource = safeSandboxes.find((s) => String(s.id) === String(sourceId));
-  const selectedTarget = safeSandboxes.find((s) => String(s.id) === String(targetId));
+  const selectedLeft = safeSandboxes.find((s) => String(s.id) === String(leftId));
+  const selectedRight = safeSandboxes.find((s) => String(s.id) === String(rightId));
+
+  // Left can be any server. Order by hierarchy: Sandbox, DEV, QA, PROD (then name).
+  const leftOptions = [...safeSandboxes]
+    .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))
+    .map((sb) => ({ label: serverLabel(sb), value: String(sb.id) }));
+
+  // Right can only be servers strictly lower in hierarchy than the selected left.
+  const rightOptions = selectedLeft
+    ? [...safeSandboxes]
+        .filter((s) => rank(s) < rank(selectedLeft))
+        .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))
+        .map((sb) => ({ label: serverLabel(sb), value: String(sb.id) }))
+    : [];
 
   useEffect(() => {
     api
       .listSandboxes()
       .then((sbs) => {
         setSandboxes(sbs);
-        const sources = sbs.filter((s) => s.environment !== "SANDBOX");
-        // Default source: prefer Development, otherwise first available non-sandbox
-        const defaultSource = sources.find((s) => s.environment === "DEV") || sources[0];
-        if (defaultSource) setSourceId(defaultSource.id);
-
-        const sbx = sbs.filter((s) => s.environment === "SANDBOX");
-        if (sbx.length > 0) {
-          const oldest = [...sbx].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))[0];
-          setTargetId(oldest.id);
+        // Default: left = highest-rank server, right = highest server below it.
+        const byRankDesc = [...sbs].sort((a, b) => rank(b) - rank(a));
+        const left = byRankDesc[0];
+        if (left) {
+          setLeftId(left.id);
+          const below = byRankDesc.find((s) => rank(s) < rank(left));
+          if (below) setRightId(below.id);
         }
       })
       .catch((e) => toast.error(e.message))
       .finally(() => setIsInitialLoad(false));
   }, []);
 
-  // Fetch SAP metadata from the SOURCE server when it changes
+  // Fetch metadata from the LEFT server
   useEffect(() => {
-    if (!sourceId) {
+    if (!leftId) {
       setSapTCodes([]);
       setSapPrograms([]);
       return;
     }
     setIsLoadingSapMeta(true);
     Promise.all([
-      api.getTCodes(sourceId).catch(() => ({ data: [] })),
-      api.getPrograms(sourceId).catch(() => ({ data: [] })),
+      api.getTCodes(leftId).catch(() => ({ data: [] })),
+      api.getPrograms(leftId).catch(() => ({ data: [] })),
     ])
       .then(([tcodesRes, programsRes]) => {
         setSapTCodes(tcodesRes.data || []);
         setSapPrograms(programsRes.data ? programsRes.data.map((p) => p.name) : []);
       })
       .finally(() => setIsLoadingSapMeta(false));
-  }, [sourceId]);
+  }, [leftId]);
 
-  // Fetch includes when tcode changes
   useEffect(() => {
-    if (!tcode || !sourceId) {
+    if (!tcode || !leftId) {
       setSapProgramIncludes([]);
       return;
     }
     const match = sapTCodes.find((t) => t.tcode === tcode);
     if (match && match.program) {
       api
-        .getProgramIncludes(sourceId, match.program)
+        .getProgramIncludes(leftId, match.program)
         .then((res) => setSapProgramIncludes(res.data || []))
         .catch(() => setSapProgramIncludes([]));
     }
-  }, [tcode, sourceId, sapTCodes]);
+  }, [tcode, leftId, sapTCodes]);
 
   function resetCompare() {
-    setSourceSource("");
-    setSandboxSource("");
+    setLeftSource("");
+    setRightSource("");
     setIdentical(false);
     setHasCompared(false);
+  }
+
+  function handleLeftChange(val) {
+    setLeftId(val);
+    resetCompare();
+    // If the current right is no longer lower than the new left, clear it.
+    const newLeft = safeSandboxes.find((s) => String(s.id) === String(val));
+    if (selectedRight && newLeft && rank(selectedRight) >= rank(newLeft)) {
+      setRightId("");
+    }
   }
 
   function handleProgramChange(value) {
@@ -114,25 +138,23 @@ export default function SyncTab({ author }) {
     setTCode(val);
     resetCompare();
     const match = sapTCodes.find((t) => t.tcode === val);
-    if (match && match.program) {
-      setProgramName(match.program);
-    }
+    if (match && match.program) setProgramName(match.program);
   }
 
   async function handleCompare() {
-    if (!sourceId || !targetId || !programName) {
-      toast.error("Please select a source server, a target sandbox, and a program.");
+    if (!leftId || !rightId || !programName) {
+      toast.error("Please select both servers and a program.");
       return;
     }
     setLoadingAction("compare");
     try {
-      const res = await api.syncCompare(sourceId, targetId, programName);
-      setSourceSource(res.source_code || "");
-      setSandboxSource(res.sandbox_source || "");
+      const res = await api.compareServers(leftId, rightId, programName);
+      setLeftSource(res.left_source || "");
+      setRightSource(res.right_source || "");
       setIdentical(res.identical);
       setHasCompared(true);
       if (res.identical) {
-        toast.info("Sandbox already matches the source — nothing to sync.");
+        toast.info("Both servers have an identical version — no differences.");
       }
     } catch (err) {
       toast.error(err.message);
@@ -142,26 +164,10 @@ export default function SyncTab({ author }) {
     }
   }
 
-  async function handleSync() {
-    setConfirmSync(false);
-    setLoadingAction("sync");
-    try {
-      const res = await api.syncApply(sourceId, targetId, programName, author);
-      toast.success(res.message || "Synced successfully.");
-      resetCompare();
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setLoadingAction("");
-    }
-  }
-
   if (isInitialLoad) {
-    return <LoadingSpinner message="Loading sync..." />;
+    return <LoadingSpinner message="Loading compare..." />;
   }
 
-  const canSync = hasCompared && !identical && !!sourceSource;
-  const sourceEnvLabel = selectedSource ? ENV_LABELS[selectedSource.environment] || selectedSource.environment : "";
   const programOptions = tcode
     ? [
         ...(sapTCodes.find((t) => t.tcode === tcode)?.program
@@ -173,43 +179,35 @@ export default function SyncTab({ author }) {
 
   return (
     <div className="page-padding" style={styles.container}>
-      <h2 style={styles.heading}>Sync</h2>
+      <h2 style={styles.heading}>Compare Server</h2>
       <p style={styles.subheading}>
-        Pull a program from a Development, QA, or Production server into a sandbox — handy when a
-        sandbox has been changed for experiments and you want to reset it to match a real environment.
+        Compare a program between two servers side by side. The right server can only be one that sits
+        lower in the promotion chain (Sandbox → Development → QA → Production). Read-only — nothing is changed.
       </p>
 
       <div className="glass-panel" style={{ ...styles.controls, position: "relative", zIndex: 30 }}>
         <div className="controls-row">
           <div style={{ flex: 1 }}>
             <SearchableDropdown
-              label="Source Server (pull from)"
-              placeholder="Select source server..."
-              value={sourceId}
-              onChange={(val) => {
-                setSourceId(val);
-                resetCompare();
-              }}
-              options={sourceServers.map((sb) => ({
-                label: `${sb.name} (${ENV_LABELS[sb.environment] || sb.environment})`,
-                value: String(sb.id),
-              }))}
+              label="Left Server (higher)"
+              placeholder="Select server..."
+              value={leftId}
+              onChange={handleLeftChange}
+              options={leftOptions}
               freeSolo={false}
             />
           </div>
           <div style={{ flex: 1 }}>
             <SearchableDropdown
-              label="Target Sandbox (overwrite)"
-              placeholder="Select sandbox..."
-              value={targetId}
+              label="Right Server (lower)"
+              placeholder={rightOptions.length === 0 ? "No lower server available" : "Select server..."}
+              value={rightId}
               onChange={(val) => {
-                setTargetId(val);
+                setRightId(val);
                 resetCompare();
               }}
-              options={targetSandboxes.map((sb) => ({
-                label: sb.name,
-                value: String(sb.id),
-              }))}
+              options={rightOptions}
+              disabled={rightOptions.length === 0}
               freeSolo={false}
             />
           </div>
@@ -224,7 +222,7 @@ export default function SyncTab({ author }) {
               onChange={handleTCodeChange}
               options={sapTCodes.map((t) => ({ label: `${t.tcode} — ${t.program}`, value: t.tcode }))}
               isLoading={isLoadingSapMeta}
-              disabled={!sourceId}
+              disabled={!leftId}
             />
           </div>
           <div style={{ flex: 1 }}>
@@ -235,7 +233,7 @@ export default function SyncTab({ author }) {
               onChange={handleProgramChange}
               options={programOptions}
               isLoading={isLoadingSapMeta}
-              disabled={!sourceId}
+              disabled={!leftId}
             />
           </div>
         </div>
@@ -245,24 +243,9 @@ export default function SyncTab({ author }) {
             className="btn btn-primary"
             style={{ flex: 1 }}
             onClick={handleCompare}
-            disabled={loadingAction === "compare" || !sourceId || !targetId || !programName}
+            disabled={loadingAction === "compare" || !leftId || !rightId || !programName}
           >
             {loadingAction === "compare" ? "Comparing..." : "Compare"}
-          </button>
-          <button
-            className="btn btn-success"
-            style={{ flex: 1 }}
-            onClick={() => setConfirmSync(true)}
-            disabled={loadingAction === "sync" || !canSync}
-            title={
-              !hasCompared
-                ? "Run Compare first"
-                : identical
-                ? "Sandbox already matches the source"
-                : "Overwrite the sandbox with the version from the source server"
-            }
-          >
-            {loadingAction === "sync" ? "Syncing..." : "⟳ Sync Sandbox from Source"}
           </button>
         </div>
       </div>
@@ -275,15 +258,15 @@ export default function SyncTab({ author }) {
               {hasCompared && !identical && (
                 <div style={styles.legend}>
                   <span style={styles.legendItem}>
-                    <span style={{ ...styles.legendDot, background: "#f43f5e" }} />
-                    <strong>{selectedSource?.name}</strong>
-                    <span style={styles.legendNote}>source of truth</span>
-                  </span>
-                  <span style={styles.legendArrow}>→</span>
-                  <span style={styles.legendItem}>
                     <span style={{ ...styles.legendDot, background: "var(--accent-2)" }} />
-                    <strong>{selectedTarget?.name}</strong>
-                    <span style={styles.legendNote}>will be overwritten</span>
+                    <strong>{selectedLeft?.name}</strong>
+                    <span style={styles.legendNote}>{ENV_LABELS[selectedLeft?.environment]}</span>
+                  </span>
+                  <span style={styles.legendArrow}>vs</span>
+                  <span style={styles.legendItem}>
+                    <span style={{ ...styles.legendDot, background: "#f59e0b" }} />
+                    <strong>{selectedRight?.name}</strong>
+                    <span style={styles.legendNote}>{ENV_LABELS[selectedRight?.environment]}</span>
                   </span>
                 </div>
               )}
@@ -301,16 +284,15 @@ export default function SyncTab({ author }) {
               </div>
             ) : !hasCompared ? (
               <div style={styles.placeholder}>
-                Select a source server, target sandbox, and program, then click <strong>Compare</strong> to
-                see the difference.
+                Select two servers and a program, then click <strong>Compare</strong> to see the difference.
               </div>
             ) : identical ? (
               <div style={styles.identicalBox}>
-                ✓ Sandbox <strong>{selectedTarget?.name}</strong> is already identical to{" "}
-                <strong>{selectedSource?.name}</strong> for <strong>{programName}</strong>. Nothing to sync.
+                ✓ <strong>{selectedLeft?.name}</strong> and <strong>{selectedRight?.name}</strong> have an
+                identical version of <strong>{programName}</strong>. No differences.
               </div>
             ) : (
-              <DiffViewer original={sourceSource} modified={sandboxSource} sideBySide={true} />
+              <DiffViewer original={leftSource} modified={rightSource} sideBySide={true} />
             )}
           </div>
         </div>
@@ -319,41 +301,22 @@ export default function SyncTab({ author }) {
       <FullscreenDiffModal
         open={showFullscreen}
         onClose={() => setShowFullscreen(false)}
-        title={`Sync Comparison: ${programName}`}
-        leftLabel={selectedSource?.name}
-        leftSubLabel={`${sourceEnvLabel} — source of truth, stays unchanged`}
-        leftColor="#f43f5e"
-        rightLabel={selectedTarget?.name}
-        rightSubLabel="Target sandbox — current state, will be overwritten by Sync"
-        rightColor="var(--accent-2)"
-        leftCode={sourceSource}
-        rightCode={sandboxSource}
+        title={`Compare: ${programName}`}
+        leftLabel={selectedLeft?.name}
+        leftSubLabel={ENV_LABELS[selectedLeft?.environment]}
+        leftColor="var(--accent-2)"
+        rightLabel={selectedRight?.name}
+        rightSubLabel={ENV_LABELS[selectedRight?.environment]}
+        rightColor="#f59e0b"
+        leftCode={leftSource}
+        rightCode={rightSource}
         footer={
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
             <button className="btn" onClick={() => setShowFullscreen(false)}>
               Close
             </button>
-            <button
-              className="btn btn-success"
-              disabled={!canSync}
-              onClick={() => {
-                setShowFullscreen(false);
-                setConfirmSync(true);
-              }}
-            >
-              ⟳ Sync Sandbox from Source
-            </button>
           </div>
         }
-      />
-
-      <ConfirmModal
-        open={confirmSync}
-        title="Sync Sandbox from Source"
-        message={`This will OVERWRITE program "${programName}" in sandbox "${selectedTarget?.name}" with the version currently on "${selectedSource?.name}" (${sourceEnvLabel}). Continue?`}
-        confirmLabel="Sync"
-        onConfirm={handleSync}
-        onCancel={() => setConfirmSync(false)}
       />
     </div>
   );
@@ -362,7 +325,7 @@ export default function SyncTab({ author }) {
 const styles = {
   container: { animation: "fadeIn 0.3s ease" },
   heading: { margin: 0, fontSize: 22, fontWeight: 700 },
-  subheading: { color: "var(--text-secondary)", fontSize: 13.5, marginTop: 4, marginBottom: 20, maxWidth: 720, lineHeight: 1.5 },
+  subheading: { color: "var(--text-secondary)", fontSize: 13.5, marginTop: 4, marginBottom: 20, maxWidth: 760, lineHeight: 1.5 },
   controls: { padding: 20, display: "flex", flexDirection: "column", gap: 16 },
   diffPanel: { padding: 20, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", height: "100%" },
   diffHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 12, flexWrap: "wrap" },

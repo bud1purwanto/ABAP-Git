@@ -5,14 +5,25 @@ from pydantic import BaseModel
 
 
 class SandboxCreate(BaseModel):
+    requested_by: str
     name: str
     host: str
     sysnr: str
     client: str
     rfc_user: str
     rfc_password: str
-    environment: str = "DEV"
-    is_live: bool = False
+    environment: str = "SANDBOX"  # SANDBOX | DEV | QA | PROD
+
+
+class SandboxUpdate(BaseModel):
+    requested_by: str
+    name: str
+    host: str
+    sysnr: str
+    client: str
+    rfc_user: str
+    rfc_password: Optional[str] = None  # if omitted/empty, keep existing password
+    environment: str
 
 
 class SandboxOut(BaseModel):
@@ -105,6 +116,7 @@ class ProgramVersionOut(BaseModel):
     program_name: str
     commit_message: str
     author: str
+    sandbox_name: Optional[str] = None
     version_hash: str
     version_number: int
     created_at: datetime
@@ -139,6 +151,7 @@ class ActivityLogOut(BaseModel):
 
 class OverviewStats(BaseModel):
     total_sandboxes: int
+    servers_by_environment: dict[str, int]
     total_programs: int
     total_commits: int
     commits_today: int

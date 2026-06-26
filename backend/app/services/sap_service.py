@@ -202,6 +202,52 @@ def debug_user_list(sandbox: Sandbox) -> dict:
         conn.close()
 
 
+def check_multiple_logon(sandbox: Sandbox, author: str | None = None) -> dict:
+    """Inspect TH_USER_LIST and report active interactive (dialog) sessions on a server.
+
+    TH_USER_LIST returns both real SAPGUI dialog sessions AND backend RFC connections
+    (including the one this very call uses). We filter to genuine dialog sessions by
+    RFC_TYPE being blank — an RFC connection has RFC_TYPE set (e.g. "E").
+
+    A "multiple logon" conflict is flagged when the shared rfc_user (the account the
+    middleware connects with) OR the current operator (author) already has a dialog
+    session open — that would mean the same account is logged on more than once, which
+    DEV/QA/PROD systems forbid for audit reasons.
+
+    Returns: {passed, conflicting_user, dialog_sessions: [{username, terminal, tcode}]}
+    """
+    conn = _connect(sandbox)
+    try:
+        res = conn.call("TH_USER_LIST")
+        user_list = res.get("USRLIST", [])
+        dialog_sessions = []
+        for u in user_list:
+            if str(u.get("RFC_TYPE", "")).strip():
+                continue  # skip RFC connections, keep only dialog logons
+            dialog_sessions.append(
+                {
+                    "username": str(u.get("BNAME", "")).strip(),
+                    "terminal": str(u.get("TERM", "")).strip(),
+                    "tcode": str(u.get("TCODE", "")).strip(),
+                }
+            )
+
+        watched = {u.upper() for u in (author, sandbox.rfc_user) if u}
+        conflicting_user = None
+        for d in dialog_sessions:
+            if d["username"].upper() in watched:
+                conflicting_user = d["username"]
+                break
+
+        return {
+            "passed": conflicting_user is None,
+            "conflicting_user": conflicting_user,
+            "dialog_sessions": dialog_sessions,
+        }
+    finally:
+        conn.close()
+
+
 def check_live_deployment_rules(sandbox: Sandbox, program_name: str, author: str) -> list[dict]:
     """
     Runs all 4 strict rules required before allowing deployment to Live, and returns
@@ -217,34 +263,12 @@ def check_live_deployment_rules(sandbox: Sandbox, program_name: str, author: str
         results.append({"key": key, "label": label, "passed": passed, "message": message})
 
     try:
-        # Rule 1: Multiple Logon Check (TH_USER_LIST)
-        # TH_USER_LIST returns BOTH real interactive SAPGUI sessions AND backend RFC
-        # connections (including the very connection this check runs on, which logs on
-        # as rfc_user). We must filter to genuine DIALOG sessions first, otherwise our
-        # own RFC connection would always register as "rfc_user is logged in".
-        #
-        # Discriminator (confirmed against live TH_USER_LIST output):
-        #   - RFC connection  -> RFC_TYPE = "E", TYPE = 32, GUIVERSION = "" (blank)
-        #   - Dialog (SAPGUI)  -> RFC_TYPE = "" (blank), TYPE = 4, GUIVERSION populated
-        #
-        # We flag a conflict if either the deploying developer (author) OR the shared
-        # rfc_user (TRSTDEV) has a genuine dialog session open on the Live server.
+        # Rule 1: Multiple Logon Check — see check_multiple_logon() for the full rationale.
         try:
-            res = conn.call("TH_USER_LIST")
-            user_list = res.get("USRLIST", [])
-            watched = {u.upper() for u in (author, sandbox.rfc_user) if u}
-            conflicting_user = None
-            for user_session in user_list:
-                rfc_type = str(user_session.get("RFC_TYPE", "")).strip()
-                if rfc_type:  # non-blank RFC_TYPE => this is an RFC connection, not a dialog logon
-                    continue
-                bname = str(user_session.get("BNAME", "")).strip().upper()
-                if bname in watched:
-                    conflicting_user = bname
-                    break
-            if conflicting_user:
+            logon = check_multiple_logon(sandbox, author)
+            if logon["conflicting_user"]:
                 add("multiple_logon", "Multiple Logon Check", False,
-                    f"User {conflicting_user} currently has an active dialog session on the Live Server.")
+                    f"User {logon['conflicting_user']} currently has an active dialog session on the Live Server.")
             else:
                 add("multiple_logon", "Multiple Logon Check", True, "No active dialog session detected.")
         except Exception:

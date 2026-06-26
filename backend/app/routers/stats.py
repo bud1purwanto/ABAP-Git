@@ -16,6 +16,12 @@ router = APIRouter(prefix="/api/stats", tags=["stats"])
 @router.get("/overview", response_model=OverviewStats)
 def overview(db: Session = Depends(get_db)):
     total_sandboxes = db.query(func.count(Sandbox.id)).scalar() or 0
+
+    env_counts = dict(
+        db.query(Sandbox.environment, func.count(Sandbox.id)).group_by(Sandbox.environment).all()
+    )
+    servers_by_environment = {env: env_counts.get(env, 0) for env in ("SANDBOX", "DEV", "QA", "PROD")}
+
     total_programs = db.query(func.count(func.distinct(ProgramVersion.program_name))).scalar() or 0
     total_commits = db.query(func.count(ProgramVersion.id)).scalar() or 0
 
@@ -29,6 +35,7 @@ def overview(db: Session = Depends(get_db)):
 
     return OverviewStats(
         total_sandboxes=total_sandboxes,
+        servers_by_environment=servers_by_environment,
         total_programs=total_programs,
         total_commits=total_commits,
         commits_today=commits_today,

@@ -32,7 +32,9 @@ export const api = {
 
   listSandboxes: () => request("/api/sandboxes"),
   createSandbox: (data) => request("/api/sandboxes", { method: "POST", body: JSON.stringify(data) }),
-  deleteSandbox: (id) => request(`/api/sandboxes/${id}`, { method: "DELETE" }),
+  updateSandbox: (id, data) => request(`/api/sandboxes/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteSandbox: (id, requestedBy) =>
+    request(`/api/sandboxes/${id}?requested_by=${encodeURIComponent(requestedBy)}`, { method: "DELETE" }),
 
   getTCodes: (sandboxId) => request(`/api/sap/${sandboxId}/tcodes`),
   deployToLive: (data) => request("/api/sap/deploy_live", { method: "POST", body: JSON.stringify(data) }),
@@ -83,14 +85,19 @@ export const api = {
 
   getOverviewStats: () => request("/api/stats/overview"),
 
-  syncCompare: (sandboxId, programName) =>
+  syncCompare: (sourceId, targetId, programName) =>
     request("/api/sap/sync/compare", {
       method: "POST",
-      body: JSON.stringify({ sandbox_id: Number(sandboxId), program_name: programName }),
+      body: JSON.stringify({ source_id: Number(sourceId), target_id: Number(targetId), program_name: programName }),
     }),
-  syncApply: (sandboxId, programName, author) =>
+  syncApply: (sourceId, targetId, programName, author) =>
     request("/api/sap/sync/apply", {
       method: "POST",
-      body: JSON.stringify({ sandbox_id: Number(sandboxId), program_name: programName, author }),
+      body: JSON.stringify({ source_id: Number(sourceId), target_id: Number(targetId), program_name: programName, author }),
+    }),
+  compareServers: (leftId, rightId, programName) =>
+    request("/api/sap/compare", {
+      method: "POST",
+      body: JSON.stringify({ left_id: Number(leftId), right_id: Number(rightId), program_name: programName }),
     }),
 };

@@ -3,6 +3,7 @@ import OverviewTab from "../components/OverviewTab";
 import SandboxesTab from "../components/SandboxesTab";
 import GitOperationsTab from "../components/GitOperationsTab";
 import SyncTab from "../components/SyncTab";
+import CompareServerTab from "../components/CompareServerTab";
 import UsersTab from "../components/UsersTab";
 import ThemeToggle from "../components/ThemeToggle";
 import ConfirmModal from "../components/ConfirmModal";
@@ -11,6 +12,7 @@ const TABS = [
   { id: "overview", label: "Overview", icon: "▦" },
   { id: "git", label: "Git Operations", icon: "⎇" },
   { id: "sync", label: "Sync", icon: "⟳" },
+  { id: "compare", label: "Compare Server", icon: "⇆" },
   { id: "sandboxes", label: "Server", icon: "▣" },
   { id: "users", label: "Users", icon: "☺" },
 ];
@@ -117,7 +119,8 @@ export default function Dashboard({ user, onLogout }) {
         {activeTab === "overview" && <OverviewTab username={displayName} />}
         {activeTab === "git" && <GitOperationsTab author={user.username} />}
         {activeTab === "sync" && <SyncTab author={user.username} />}
-        {activeTab === "sandboxes" && <SandboxesTab />}
+        {activeTab === "compare" && <CompareServerTab />}
+        {activeTab === "sandboxes" && <SandboxesTab currentUser={user} />}
         {activeTab === "users" && <UsersTab currentUser={user} />}
       </main>
     </div>

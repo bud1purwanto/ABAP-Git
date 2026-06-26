@@ -15,6 +15,6 @@ class Sandbox(Base):
     client = Column(String(10), nullable=False)
     rfc_user = Column(String(100), nullable=False)
     rfc_password = Column(String(255), nullable=False)
-    environment = Column(String(20), nullable=False, default="DEV")
-    is_live = Column(Boolean, nullable=False, default=False)
+    environment = Column(String(20), nullable=False, default="SANDBOX")  # SANDBOX | DEV | QA | PROD
+    is_live = Column(Boolean, nullable=False, default=False)  # mirror of (environment == 'DEV')
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)

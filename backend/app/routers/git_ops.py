@@ -36,6 +36,7 @@ def commit_version(payload: CommitRequest, db: Session = Depends(get_db)):
         source_code=payload.source_code,
         commit_message=payload.commit_message,
         author=payload.author or "system",
+        sandbox_name=payload.sandbox_name,
         version_hash=version_hash,
         version_number=new_version_number,
     )

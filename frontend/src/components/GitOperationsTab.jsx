@@ -42,8 +42,9 @@ export default function GitOperationsTab({ author }) {
   const toast = useToast();
 
   const safeSandboxes = sandboxes || [];
-  const regularSandboxes = safeSandboxes.filter((s) => !s.is_live);
-  const liveSandbox = safeSandboxes.find((s) => s.is_live);
+  // Git Operations only works against SANDBOX servers.
+  const regularSandboxes = safeSandboxes.filter((s) => s.environment === "SANDBOX");
+  const liveSandbox = safeSandboxes.find((s) => s.environment === "DEV");
   const selectedSandbox = safeSandboxes.find((s) => String(s.id) === String(sandboxId));
   const isProdTarget = selectedSandbox?.environment === "PROD";
 
@@ -51,7 +52,7 @@ export default function GitOperationsTab({ author }) {
     Promise.all([
       api.listSandboxes().then((sbs) => {
         setSandboxes(sbs);
-        const regular = sbs.filter(s => !s.is_live);
+        const regular = sbs.filter((s) => s.environment === "SANDBOX");
         if (regular.length > 0) {
           const oldest = [...regular].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))[0];
           setSandboxId(oldest.id);
@@ -450,10 +451,10 @@ export default function GitOperationsTab({ author }) {
               className="btn"
               disabled={!selectedVersionId || !liveSandbox}
               onClick={() => setShowDeployLiveModal(true)}
-              title={!liveSandbox ? "No Live Development server configured" : "Deploy selected version to Live Development"}
+              title={!liveSandbox ? "No Development server configured" : "Deploy selected version to the Development server"}
               style={{ flex: 1, background: "rgba(245, 158, 11, 0.12)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.35)" }}
             >
-              🚀 Deploy to Live Development
+              🚀 Deploy to Development
             </button>
             </div>
           </div>
