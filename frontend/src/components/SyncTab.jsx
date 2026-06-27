@@ -183,6 +183,10 @@ export default function SyncTab({ author }) {
 
   const canSync = hasCompared && !identical && !!sourceSource;
   const sourceEnvLabel = selectedSource ? ENV_LABELS[selectedSource.environment] || selectedSource.environment : "";
+  const syncLabel =
+    selectedTarget && selectedSource
+      ? `⟳ Sync Sandbox ${selectedTarget.name} from ${selectedSource.name}`
+      : "⟳ Sync Sandbox from Source";
   const programOptions = tcode
     ? [
         ...(sapTCodes.find((t) => t.tcode === tcode)?.program
@@ -298,7 +302,7 @@ export default function SyncTab({ author }) {
                 : "Overwrite the sandbox with the version from the source server"
             }
           >
-            {loadingAction === "sync" ? "Syncing..." : "⟳ Sync Sandbox from Source"}
+            {loadingAction === "sync" ? "Syncing..." : syncLabel}
           </button>
         </div>
       </div>
@@ -377,7 +381,7 @@ export default function SyncTab({ author }) {
                 setConfirmSync(true);
               }}
             >
-              ⟳ Sync Sandbox from Source
+              {syncLabel}
             </button>
           </div>
         }

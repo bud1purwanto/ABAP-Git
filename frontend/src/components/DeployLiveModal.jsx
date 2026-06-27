@@ -81,7 +81,7 @@ function RuleRow({ rule, status, message }) {
   );
 }
 
-export default function DeployLiveModal({ open, programName, versionId, author, onClose, onDeploySuccess }) {
+export default function DeployLiveModal({ open, programName, serverName, versionId, author, onClose, onDeploySuccess }) {
   const [phase, setPhase] = useState("idle"); // idle | validating | done_fail | done_ok | deploying | deployed
   const [ruleStatuses, setRuleStatuses] = useState(() =>
     Object.fromEntries(ALL_RULES.map((r) => [r.key, { status: "pending", message: "" }]))
@@ -169,7 +169,7 @@ export default function DeployLiveModal({ open, programName, versionId, author, 
         <div style={styles.header}>
           <div style={styles.headerIcon}>🚀</div>
           <div>
-            <div style={styles.headerTitle}>Deploy to Live Development</div>
+            <div style={styles.headerTitle}>Deploy to {serverName || "Live Development"}</div>
             <div style={styles.headerSub}>
               {programName} — validating {ALL_RULES.length} security rules
             </div>
@@ -200,7 +200,7 @@ export default function DeployLiveModal({ open, programName, versionId, author, 
         {/* Success banner */}
         {deployed && (
           <div style={styles.successBanner}>
-            ✓ Program deployed successfully to Live Development!
+            ✓ Program deployed successfully to {serverName || "Live Development"}!
           </div>
         )}
 

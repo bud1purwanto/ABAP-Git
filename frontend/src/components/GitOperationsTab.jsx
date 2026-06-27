@@ -274,7 +274,7 @@ export default function GitOperationsTab({ author }) {
 
   function handleDeploySuccess() {
     setShowDeployLiveModal(false);
-    toast.success(`🚀 ${programName} deployed to Live Development!`);
+    toast.success(`🚀 ${programName} deployed to ${liveSandbox?.name || "Development"}!`);
     refreshActivity();
   }
 
@@ -459,10 +459,10 @@ export default function GitOperationsTab({ author }) {
               className="btn"
               disabled={!selectedVersionId || !liveSandbox}
               onClick={() => setShowDeployLiveModal(true)}
-              title={!liveSandbox ? "No Development server configured" : "Deploy selected version to the Development server"}
+              title={!liveSandbox ? "No Development server configured" : `Deploy selected version to ${liveSandbox.name}`}
               style={{ flex: 1, background: "rgba(245, 158, 11, 0.12)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.35)" }}
             >
-              🚀 Deploy to Development
+              🚀 Deploy to {liveSandbox?.name || "Development"}
             </button>
             </div>
           </div>
@@ -563,6 +563,7 @@ export default function GitOperationsTab({ author }) {
       <DeployLiveModal
         open={showDeployLiveModal}
         programName={programName}
+        serverName={liveSandbox?.name}
         versionId={selectedVersionId ? Number(selectedVersionId) : null}
         author={author}
         onClose={() => setShowDeployLiveModal(false)}
