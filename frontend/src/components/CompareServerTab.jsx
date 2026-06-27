@@ -19,6 +19,23 @@ function serverLabel(sb) {
   return `${sb.name} (${ENV_LABELS[sb.environment] || sb.environment})`;
 }
 
+function TransportBox({ info }) {
+  const pkg = info?.package || "—";
+  const cr = info?.cr_number || "—";
+  const desc = info?.cr_description;
+  return (
+    <div style={styles.crBox}>
+      <div style={styles.crHeader}>
+        <span style={styles.crChip}>📦 {pkg}</span>
+        <span style={styles.crChip}>🚚 {cr}</span>
+      </div>
+      <div style={styles.crDesc}>
+        {desc || <em style={{ color: "var(--text-muted)" }}>No change request description.</em>}
+      </div>
+    </div>
+  );
+}
+
 export default function CompareServerTab() {
   const [sandboxes, setSandboxes] = useState([]);
   const [leftId, setLeftId] = useState("");
@@ -34,6 +51,8 @@ export default function CompareServerTab() {
 
   const [leftSource, setLeftSource] = useState("");
   const [rightSource, setRightSource] = useState("");
+  const [leftTransport, setLeftTransport] = useState(null);
+  const [rightTransport, setRightTransport] = useState(null);
   const [identical, setIdentical] = useState(false);
   const [hasCompared, setHasCompared] = useState(false);
 
@@ -126,6 +145,8 @@ export default function CompareServerTab() {
   function resetCompare() {
     setLeftSource("");
     setRightSource("");
+    setLeftTransport(null);
+    setRightTransport(null);
     setIdentical(false);
     setHasCompared(false);
   }
@@ -166,6 +187,8 @@ export default function CompareServerTab() {
       const res = await api.compareServers(leftId, rightId, programName);
       setLeftSource(res.left_source || "");
       setRightSource(res.right_source || "");
+      setLeftTransport(res.left_transport || null);
+      setRightTransport(res.right_transport || null);
       setIdentical(res.identical);
       setHasCompared(true);
       if (res.identical) {
@@ -280,30 +303,35 @@ export default function CompareServerTab() {
 
       <div className="diff-viewer-wrapper" style={{ marginTop: 20 }}>
         <div className="glass-panel diff-panel" style={styles.diffPanel}>
-          <div style={styles.diffHeader}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Comparison</h3>
-            <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <div style={styles.diffHeaderCol}>
+            <div style={styles.diffTitleRow}>
+              <h3 style={styles.diffTitleCentered}>Comparison</h3>
               {hasCompared && !identical && (
-                <div style={styles.legend}>
-                  <span style={styles.legendItem}>
-                    <span style={{ ...styles.legendDot, background: "var(--accent-2)" }} />
-                    <strong>{selectedLeft?.name}</strong>
-                    <span style={styles.legendNote}>{ENV_LABELS[selectedLeft?.environment]}</span>
-                  </span>
-                  <span style={styles.legendArrow}>vs</span>
-                  <span style={styles.legendItem}>
-                    <span style={{ ...styles.legendDot, background: "#f59e0b" }} />
-                    <strong>{selectedRight?.name}</strong>
-                    <span style={styles.legendNote}>{ENV_LABELS[selectedRight?.environment]}</span>
-                  </span>
-                </div>
-              )}
-              {hasCompared && !identical && (
-                <button className="btn" style={styles.fullscreenBtn} onClick={() => setShowFullscreen(true)}>
+                <button className="btn" style={styles.fullscreenBtnAbs} onClick={() => setShowFullscreen(true)}>
                   ⛶ Fullscreen
                 </button>
               )}
             </div>
+            {hasCompared && !identical && (
+              <>
+                <div style={styles.colTitles}>
+                  <div style={styles.colTitle}>
+                    <span style={{ ...styles.legendDot, background: "var(--accent-2)" }} />
+                    <strong>{selectedLeft?.name}</strong>
+                    <span style={styles.legendNote}>{ENV_LABELS[selectedLeft?.environment]}</span>
+                  </div>
+                  <div style={styles.colTitle}>
+                    <span style={{ ...styles.legendDot, background: "#f59e0b" }} />
+                    <strong>{selectedRight?.name}</strong>
+                    <span style={styles.legendNote}>{ENV_LABELS[selectedRight?.environment]}</span>
+                  </div>
+                </div>
+                <div style={styles.crBoxes}>
+                  <TransportBox info={leftTransport} />
+                  <TransportBox info={rightTransport} />
+                </div>
+              </>
+            )}
           </div>
           <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
             {loadingAction === "compare" ? (
@@ -356,13 +384,29 @@ const styles = {
   subheading: { color: "var(--text-secondary)", fontSize: 13.5, marginTop: 4, marginBottom: 20, maxWidth: 760, lineHeight: 1.5 },
   controls: { padding: 20, display: "flex", flexDirection: "column", gap: 16 },
   diffPanel: { padding: 20, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", height: "100%" },
-  diffHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 12, flexWrap: "wrap" },
-  legend: { display: "flex", alignItems: "center", gap: 10, fontSize: 12.5 },
-  legendItem: { display: "flex", alignItems: "center", gap: 6, color: "var(--text-primary)" },
+  diffHeaderCol: { display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 },
+  diffTitleRow: { position: "relative", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 28 },
+  diffTitleCentered: { margin: 0, fontSize: 14, fontWeight: 600, textAlign: "center" },
+  colTitles: { display: "flex", gap: 12 },
+  colTitle: { flex: 1, minWidth: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 12.5, color: "var(--text-primary)", flexWrap: "wrap" },
   legendDot: { width: 8, height: 8, borderRadius: "50%", flexShrink: 0 },
   legendNote: { color: "var(--text-muted)", fontWeight: 400, fontSize: 11.5 },
-  legendArrow: { color: "var(--text-muted)", fontWeight: 700 },
-  fullscreenBtn: { padding: "5px 12px", fontSize: 12.5 },
+  fullscreenBtnAbs: { position: "absolute", right: 0, top: "50%", transform: "translateY(-50%)", padding: "5px 12px", fontSize: 12.5 },
+  crBoxes: { display: "flex", gap: 12 },
+  crBox: {
+    flex: 1, minWidth: 0,
+    background: "rgba(99, 102, 241, 0.08)",
+    border: "1px solid var(--accent-glow)",
+    borderRadius: 10,
+    padding: "8px 12px",
+  },
+  crHeader: { display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 4 },
+  crChip: {
+    fontSize: 11.5, fontWeight: 700, color: "var(--accent-2)",
+    background: "rgba(34, 211, 238, 0.1)", border: "1px solid rgba(34, 211, 238, 0.25)",
+    borderRadius: 5, padding: "1px 8px", fontFamily: "monospace",
+  },
+  crDesc: { fontSize: 12.5, color: "var(--text-primary)", textAlign: "center", lineHeight: 1.4, wordBreak: "break-word" },
   placeholder: { color: "var(--text-muted)", fontStyle: "italic", padding: "24px 4px", fontSize: 13.5, lineHeight: 1.6 },
   identicalBox: {
     color: "var(--success)",

@@ -311,6 +311,16 @@ def compare_servers(payload: CompareServersRequest, db: Session = Depends(get_db
     except Exception:
         right_source = ""
 
+    empty_tr = {"package": None, "cr_number": None, "cr_description": None}
+    try:
+        left_transport = sap_service.get_object_transport_info(left, payload.program_name)
+    except Exception:
+        left_transport = dict(empty_tr)
+    try:
+        right_transport = sap_service.get_object_transport_info(right, payload.program_name)
+    except Exception:
+        right_transport = dict(empty_tr)
+
     return {
         "program_name": payload.program_name,
         "left_source": left_source,
@@ -320,6 +330,8 @@ def compare_servers(payload: CompareServersRequest, db: Session = Depends(get_db
         "left_environment": left.environment,
         "right_name": right.name,
         "right_environment": right.environment,
+        "left_transport": left_transport,
+        "right_transport": right_transport,
     }
 
 

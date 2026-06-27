@@ -183,6 +183,89 @@ def get_tcode_for_program(sandbox: Sandbox, program_name: str) -> str | None:
     finally:
         conn.close()
 
+def get_object_transport_info(sandbox: Sandbox, program_name: str) -> dict:
+    """Return {package, cr_number, cr_description} for a program on a server.
+
+    - package: DEVCLASS from TADIR.
+    - cr_number: the most recent transport request (E070, latest by date) that
+      contains the object (E071).
+    - cr_description: that transport's short text (E07T, prefer English).
+    All lookups are tolerant — anything that can't be read comes back as None.
+    """
+    info = {"package": None, "cr_number": None, "cr_description": None}
+    conn = _connect(sandbox)
+    try:
+        # ── Package (TADIR) ──
+        try:
+            res = conn.call(
+                "RFC_READ_TABLE", QUERY_TABLE="TADIR", DELIMITER="|",
+                OPTIONS=[{"TEXT": f"PGMID = 'R3TR' AND OBJECT = 'PROG' AND OBJ_NAME = '{program_name}'"}],
+                FIELDS=[{"FIELDNAME": "DEVCLASS"}], ROWCOUNT=1,
+            )
+            data = res.get("DATA", [])
+            if data:
+                info["package"] = data[0]["WA"].split("|")[0].strip() or None
+        except Exception:
+            pass
+
+        # ── Transport requests containing the object (E071) ──
+        try:
+            res = conn.call(
+                "RFC_READ_TABLE", QUERY_TABLE="E071", DELIMITER="|",
+                OPTIONS=[{"TEXT": f"PGMID = 'R3TR' AND OBJECT = 'PROG' AND OBJ_NAME = '{program_name}'"}],
+                FIELDS=[{"FIELDNAME": "TRKORR"}], ROWCOUNT=100,
+            )
+            trs = sorted({r["WA"].split("|")[0].strip() for r in res.get("DATA", []) if r["WA"].strip()})
+        except Exception:
+            trs = []
+
+        if trs:
+            in_clause = ", ".join(f"'{t}'" for t in trs)
+            latest = trs[-1]
+            # Pick the most recent by E070 date/time
+            try:
+                res = conn.call(
+                    "RFC_READ_TABLE", QUERY_TABLE="E070", DELIMITER="|",
+                    OPTIONS=[{"TEXT": f"TRKORR IN ({in_clause})"}],
+                    FIELDS=[{"FIELDNAME": "TRKORR"}, {"FIELDNAME": "AS4DATE"}, {"FIELDNAME": "AS4TIME"}],
+                    ROWCOUNT=100,
+                )
+                rows = []
+                for r in res.get("DATA", []):
+                    parts = r["WA"].split("|")
+                    if len(parts) >= 3:
+                        rows.append((parts[0].strip(), parts[1].strip(), parts[2].strip()))
+                if rows:
+                    rows.sort(key=lambda x: (x[1], x[2]))
+                    latest = rows[-1][0]
+            except Exception:
+                pass
+            info["cr_number"] = latest
+
+            # Description (E07T, prefer English)
+            try:
+                res = conn.call(
+                    "RFC_READ_TABLE", QUERY_TABLE="E07T", DELIMITER="|",
+                    OPTIONS=[{"TEXT": f"TRKORR = '{latest}'"}],
+                    FIELDS=[{"FIELDNAME": "AS4TEXT"}, {"FIELDNAME": "LANGU"}], ROWCOUNT=20,
+                )
+                descs = []
+                for r in res.get("DATA", []):
+                    parts = r["WA"].split("|")
+                    text = parts[0].strip()
+                    lang = parts[1].strip() if len(parts) > 1 else ""
+                    descs.append((lang, text))
+                if descs:
+                    english = [d for d in descs if d[0] in ("E", "EN")]
+                    info["cr_description"] = (english[0][1] if english else descs[0][1]) or None
+            except Exception:
+                pass
+
+        return info
+    finally:
+        conn.close()
+
+
 def debug_user_list(sandbox: Sandbox) -> dict:
     """Diagnostic: return the raw TH_USER_LIST so we can see exactly which users/sessions
     SAP reports as logged on (including session type), instead of guessing."""

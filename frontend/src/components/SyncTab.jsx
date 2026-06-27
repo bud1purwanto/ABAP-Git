@@ -309,30 +309,29 @@ export default function SyncTab({ author }) {
 
       <div className="diff-viewer-wrapper" style={{ marginTop: 20 }}>
         <div className="glass-panel diff-panel" style={styles.diffPanel}>
-          <div style={styles.diffHeader}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Comparison</h3>
-            <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <div style={styles.diffHeaderCol}>
+            <div style={styles.diffTitleRow}>
+              <h3 style={styles.diffTitleCentered}>Comparison</h3>
               {hasCompared && !identical && (
-                <div style={styles.legend}>
-                  <span style={styles.legendItem}>
-                    <span style={{ ...styles.legendDot, background: "#f43f5e" }} />
-                    <strong>{selectedSource?.name}</strong>
-                    <span style={styles.legendNote}>source of truth</span>
-                  </span>
-                  <span style={styles.legendArrow}>→</span>
-                  <span style={styles.legendItem}>
-                    <span style={{ ...styles.legendDot, background: "var(--accent-2)" }} />
-                    <strong>{selectedTarget?.name}</strong>
-                    <span style={styles.legendNote}>will be overwritten</span>
-                  </span>
-                </div>
-              )}
-              {hasCompared && !identical && (
-                <button className="btn" style={styles.fullscreenBtn} onClick={() => setShowFullscreen(true)}>
+                <button className="btn" style={styles.fullscreenBtnAbs} onClick={() => setShowFullscreen(true)}>
                   ⛶ Fullscreen
                 </button>
               )}
             </div>
+            {hasCompared && !identical && (
+              <div style={styles.colTitles}>
+                <div style={styles.colTitle}>
+                  <span style={{ ...styles.legendDot, background: "#f43f5e" }} />
+                  <strong>{selectedSource?.name}</strong>
+                  <span style={styles.legendNote}>source of truth</span>
+                </div>
+                <div style={styles.colTitle}>
+                  <span style={{ ...styles.legendDot, background: "var(--accent-2)" }} />
+                  <strong>{selectedTarget?.name}</strong>
+                  <span style={styles.legendNote}>will be overwritten</span>
+                </div>
+              </div>
+            )}
           </div>
           <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
             {loadingAction === "compare" ? (
@@ -405,13 +404,14 @@ const styles = {
   subheading: { color: "var(--text-secondary)", fontSize: 13.5, marginTop: 4, marginBottom: 20, maxWidth: 720, lineHeight: 1.5 },
   controls: { padding: 20, display: "flex", flexDirection: "column", gap: 16 },
   diffPanel: { padding: 20, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", height: "100%" },
-  diffHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 12, flexWrap: "wrap" },
-  legend: { display: "flex", alignItems: "center", gap: 10, fontSize: 12.5 },
-  legendItem: { display: "flex", alignItems: "center", gap: 6, color: "var(--text-primary)" },
+  diffHeaderCol: { display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 },
+  diffTitleRow: { position: "relative", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 28 },
+  diffTitleCentered: { margin: 0, fontSize: 14, fontWeight: 600, textAlign: "center" },
+  colTitles: { display: "flex", gap: 12 },
+  colTitle: { flex: 1, minWidth: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 12.5, color: "var(--text-primary)", flexWrap: "wrap" },
   legendDot: { width: 8, height: 8, borderRadius: "50%", flexShrink: 0 },
   legendNote: { color: "var(--text-muted)", fontWeight: 400, fontSize: 11.5 },
-  legendArrow: { color: "var(--text-muted)", fontWeight: 700 },
-  fullscreenBtn: { padding: "5px 12px", fontSize: 12.5 },
+  fullscreenBtnAbs: { position: "absolute", right: 0, top: "50%", transform: "translateY(-50%)", padding: "5px 12px", fontSize: 12.5 },
   placeholder: { color: "var(--text-muted)", fontStyle: "italic", padding: "24px 4px", fontSize: 13.5, lineHeight: 1.6 },
   identicalBox: {
     color: "var(--success)",
