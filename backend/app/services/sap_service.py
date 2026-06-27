@@ -183,16 +183,27 @@ def get_tcode_for_program(sandbox: Sandbox, program_name: str) -> str | None:
     finally:
         conn.close()
 
+_TRSTATUS_LABELS = {
+    "D": "Modifiable",
+    "L": "Modifiable (protected)",
+    "O": "Release Started",
+    "R": "Released",
+    "N": "Released",
+}
+
+
 def get_object_transport_info(sandbox: Sandbox, program_name: str) -> dict:
-    """Return {package, cr_number, cr_description} for a program on a server.
+    """Return {package, cr_number, cr_description, cr_status} for a program on a server.
 
     - package: DEVCLASS from TADIR.
     - cr_number: the most recent transport request (E070, latest by date) that
       contains the object (E071).
     - cr_description: that transport's short text (E07T, prefer English).
+    - cr_status: that transport's status (E070 TRSTATUS) mapped to a label
+      (Modifiable / Released / ...).
     All lookups are tolerant — anything that can't be read comes back as None.
     """
-    info = {"package": None, "cr_number": None, "cr_description": None}
+    info = {"package": None, "cr_number": None, "cr_description": None, "cr_status": None}
     conn = _connect(sandbox)
     try:
         # ── Package (TADIR) ──
@@ -222,25 +233,30 @@ def get_object_transport_info(sandbox: Sandbox, program_name: str) -> dict:
         if trs:
             in_clause = ", ".join(f"'{t}'" for t in trs)
             latest = trs[-1]
-            # Pick the most recent by E070 date/time
+            latest_status = None
+            # Pick the most recent by E070 date/time, capturing its status
             try:
                 res = conn.call(
                     "RFC_READ_TABLE", QUERY_TABLE="E070", DELIMITER="|",
                     OPTIONS=[{"TEXT": f"TRKORR IN ({in_clause})"}],
-                    FIELDS=[{"FIELDNAME": "TRKORR"}, {"FIELDNAME": "AS4DATE"}, {"FIELDNAME": "AS4TIME"}],
+                    FIELDS=[{"FIELDNAME": "TRKORR"}, {"FIELDNAME": "AS4DATE"},
+                            {"FIELDNAME": "AS4TIME"}, {"FIELDNAME": "TRSTATUS"}],
                     ROWCOUNT=100,
                 )
                 rows = []
                 for r in res.get("DATA", []):
                     parts = r["WA"].split("|")
-                    if len(parts) >= 3:
-                        rows.append((parts[0].strip(), parts[1].strip(), parts[2].strip()))
+                    if len(parts) >= 4:
+                        rows.append((parts[0].strip(), parts[1].strip(), parts[2].strip(), parts[3].strip()))
                 if rows:
                     rows.sort(key=lambda x: (x[1], x[2]))
                     latest = rows[-1][0]
+                    latest_status = rows[-1][3]
             except Exception:
                 pass
             info["cr_number"] = latest
+            if latest_status:
+                info["cr_status"] = _TRSTATUS_LABELS.get(latest_status, latest_status)
 
             # Description (E07T, prefer English)
             try:

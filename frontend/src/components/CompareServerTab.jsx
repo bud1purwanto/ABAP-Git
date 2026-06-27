@@ -19,15 +19,30 @@ function serverLabel(sb) {
   return `${sb.name} (${ENV_LABELS[sb.environment] || sb.environment})`;
 }
 
-function TransportBox({ info }) {
+const CR_STATUS_COLORS = {
+  Modifiable: { color: "#fcd34d", bg: "rgba(251, 191, 36, 0.12)", border: "rgba(251, 191, 36, 0.35)" },
+  Released: { color: "#6ee7b7", bg: "rgba(52, 211, 153, 0.14)", border: "rgba(52, 211, 153, 0.4)" },
+};
+
+function TransportBox({ info, environment }) {
   const pkg = info?.package || "—";
   const cr = info?.cr_number || "—";
   const desc = info?.cr_description;
+  // CR status is only shown for the Development server.
+  const status = environment === "DEV" ? info?.cr_status : null;
+  const statusStyle = status
+    ? CR_STATUS_COLORS[status] || { color: "var(--accent-2)", bg: "rgba(34, 211, 238, 0.12)", border: "rgba(34, 211, 238, 0.3)" }
+    : null;
   return (
     <div style={styles.crBox}>
       <div style={styles.crHeader}>
         <span style={styles.crChip}>📦 {pkg}</span>
         <span style={styles.crChip}>🚚 {cr}</span>
+        {status && (
+          <span style={{ ...styles.crStatusChip, color: statusStyle.color, background: statusStyle.bg, border: `1px solid ${statusStyle.border}` }}>
+            ● {status}
+          </span>
+        )}
       </div>
       <div style={styles.crDesc}>
         {desc || <em style={{ color: "var(--text-muted)" }}>No change request description.</em>}
@@ -327,8 +342,8 @@ export default function CompareServerTab() {
                   </div>
                 </div>
                 <div style={styles.crBoxes}>
-                  <TransportBox info={leftTransport} />
-                  <TransportBox info={rightTransport} />
+                  <TransportBox info={leftTransport} environment={selectedLeft?.environment} />
+                  <TransportBox info={rightTransport} environment={selectedRight?.environment} />
                 </div>
               </>
             )}
@@ -405,6 +420,9 @@ const styles = {
     fontSize: 11.5, fontWeight: 700, color: "var(--accent-2)",
     background: "rgba(34, 211, 238, 0.1)", border: "1px solid rgba(34, 211, 238, 0.25)",
     borderRadius: 5, padding: "1px 8px", fontFamily: "monospace",
+  },
+  crStatusChip: {
+    fontSize: 11, fontWeight: 700, borderRadius: 5, padding: "1px 8px",
   },
   crDesc: { fontSize: 12.5, color: "var(--text-primary)", textAlign: "center", lineHeight: 1.4, wordBreak: "break-word" },
   placeholder: { color: "var(--text-muted)", fontStyle: "italic", padding: "24px 4px", fontSize: 13.5, lineHeight: 1.6 },
