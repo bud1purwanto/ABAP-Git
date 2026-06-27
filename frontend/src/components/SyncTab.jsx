@@ -185,7 +185,7 @@ export default function SyncTab({ author }) {
   const sourceEnvLabel = selectedSource ? ENV_LABELS[selectedSource.environment] || selectedSource.environment : "";
   const syncLabel =
     selectedTarget && selectedSource
-      ? `⟳ Sync Sandbox ${selectedTarget.name} from ${selectedSource.name}`
+      ? `⟳ Sync ${selectedTarget.name} from ${selectedSource.name}`
       : "⟳ Sync Sandbox from Source";
   const programOptions = tcode
     ? [
