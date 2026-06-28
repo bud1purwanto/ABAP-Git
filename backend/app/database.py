@@ -35,6 +35,7 @@ def run_lightweight_migrations():
         # Keep is_live mirrored to the DEV environment for any leftover consumers.
         "UPDATE sandboxes SET is_live = (environment = 'DEV')",
         "ALTER TABLE program_versions ADD COLUMN IF NOT EXISTS sandbox_name VARCHAR(100)",
+        "ALTER TABLE sandboxes ADD COLUMN IF NOT EXISTS allow_multiple_logon BOOLEAN NOT NULL DEFAULT FALSE",
     ]
     with engine.connect() as conn:
         for statement in statements:

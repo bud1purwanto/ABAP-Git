@@ -47,7 +47,7 @@ export default function OverviewTab({ username }) {
   return (
     <div className="page-padding" style={styles.container}>
       <h2 style={styles.heading}>Welcome back, {username}</h2>
-      <p style={styles.subheading}>Here's what's happening across your ABAP Git middleware.</p>
+      <p style={styles.subheading}>Here's what's happening across your ABAP Version Control System.</p>
 
       <div className="stats-card-grid">
         {CARDS.map((c) => (

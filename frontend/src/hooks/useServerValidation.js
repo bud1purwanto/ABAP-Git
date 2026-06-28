@@ -47,7 +47,10 @@ export function useServerValidation({ serverId, environment, programName = "", a
         if (author) params.append("author", author);
         const res = await api.checkLogon(serverId, author);
 
-        if (!res.passed) {
+        if (res.applicable === false) {
+          setPassed(true);
+          setMessage("hidden");
+        } else if (!res.passed) {
           const terminal = res.conflicting_terminal
             ? ` (PC/Terminal: ${res.conflicting_terminal})`
             : "";

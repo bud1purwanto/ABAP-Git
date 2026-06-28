@@ -13,6 +13,7 @@ class SandboxCreate(BaseModel):
     rfc_user: str
     rfc_password: str
     environment: str = "SANDBOX"  # SANDBOX | DEV | QA | PROD
+    allow_multiple_logon: bool = False
 
 
 class SandboxUpdate(BaseModel):
@@ -24,6 +25,7 @@ class SandboxUpdate(BaseModel):
     rfc_user: str
     rfc_password: Optional[str] = None  # if omitted/empty, keep existing password
     environment: str
+    allow_multiple_logon: Optional[bool] = None
 
 
 class SandboxOut(BaseModel):
@@ -35,6 +37,7 @@ class SandboxOut(BaseModel):
     rfc_user: str
     environment: str
     is_live: bool
+    allow_multiple_logon: bool
     created_at: datetime
 
     class Config:
@@ -168,3 +171,12 @@ class OverviewStats(BaseModel):
     commits_today: int
     recent_activity: list[ActivityLogOut]
     recent_commits: list[ProgramVersionOut]
+
+
+class SapTestConnectionRequest(BaseModel):
+    sandbox_id: Optional[int] = None
+    host: str
+    sysnr: str
+    client: str
+    rfc_user: str
+    rfc_password: Optional[str] = None

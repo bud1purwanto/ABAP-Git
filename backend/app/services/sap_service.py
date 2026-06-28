@@ -366,22 +366,25 @@ def check_live_deployment_rules_sequential(sandbox: Sandbox, program_name: str, 
         return passed
 
     # ── Rule 1: Multiple Logon (fail-closed) ──────────────────────────────────
-    try:
-        logon = check_multiple_logon(sandbox, author)
-        if logon["conflicting_user"]:
-            terminal = logon.get("conflicting_terminal")
-            terminal_info = f" (PC/Terminal: {terminal})" if terminal else ""
+    if getattr(sandbox, "allow_multiple_logon", False):
+        add("multiple_logon", "Multiple Logon Check", True, "Bypassed: Server allows multiple logon.")
+    else:
+        try:
+            logon = check_multiple_logon(sandbox, author)
+            if logon["conflicting_user"]:
+                terminal = logon.get("conflicting_terminal")
+                terminal_info = f" (PC/Terminal: {terminal})" if terminal else ""
+                add("multiple_logon", "Multiple Logon Check", False,
+                    f"User '{logon['conflicting_user']}'{terminal_info} still has an active dialog session on the Live server. "
+                    "Log out of SAP GUI first, then retry.")
+                return results  # STOP
+            add("multiple_logon", "Multiple Logon Check", True,
+                     "No active dialog session detected.")
+        except Exception as exc:
             add("multiple_logon", "Multiple Logon Check", False,
-                f"User '{logon['conflicting_user']}'{terminal_info} still has an active dialog session on the Live server. "
-                "Log out of SAP GUI first, then retry.")
+                f"Cannot verify logon status (RFC unavailable: {exc}). "
+                "Deploy blocked for audit safety — contact Basis to grant TH_USER_LIST access.")
             return results  # STOP
-        ok = add("multiple_logon", "Multiple Logon Check", True,
-                 "No active dialog session detected.")
-    except Exception as exc:
-        add("multiple_logon", "Multiple Logon Check", False,
-            f"Cannot verify logon status (RFC unavailable: {exc}). "
-            "Deploy blocked for audit safety — contact Basis to grant TH_USER_LIST access.")
-        return results  # STOP
 
     # ── Rule 2: SAP Lock / Edit-in-progress (fail-closed) ────────────────────
     conn = _connect(sandbox)

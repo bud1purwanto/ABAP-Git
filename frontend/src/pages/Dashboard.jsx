@@ -39,7 +39,7 @@ export default function Dashboard({ user, onLogout }) {
           <span />
         </button>
         <span style={styles.brandIcon}>⌬</span>
-        <div style={{ flex: 1, fontSize: 14, fontWeight: 700 }}>ABAP Git</div>
+        <div style={{ flex: 1, fontSize: 14, fontWeight: 700 }}>ABAP Version Control System</div>
         <ThemeToggle />
       </div>
 
@@ -49,8 +49,8 @@ export default function Dashboard({ user, onLogout }) {
         <div style={styles.brand}>
           <span style={styles.brandIcon}>⌬</span>
           <div className="app-brand-text">
-            <div style={styles.brandTitle}>ABAP Git</div>
-            <div style={styles.brandSubtitle}>Versioning Console</div>
+            <div style={styles.brandTitle}>ABAP VCS</div>
+            <div style={styles.brandSubtitle}>Version Control System</div>
           </div>
         </div>
 
@@ -78,13 +78,15 @@ export default function Dashboard({ user, onLogout }) {
               <span className="online-dot" />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="app-username" style={styles.userName}>
+              <div className="app-username" style={styles.userName} title={displayName}>
                 {displayName}
               </div>
-              <div className="app-userrole" style={styles.usernameTag} title={user.username}>
-                {user.username}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4, alignItems: "center" }}>
+                <div className="app-userrole" style={styles.usernameTag} title={user.username}>
+                  {user.username}
+                </div>
+                {user.role === "super_admin" && <div style={styles.roleTag} title="Super Admin">👑</div>}
               </div>
-              {user.role === "super_admin" && <span style={styles.roleTag}>★ Super Admin</span>}
             </div>
           </div>
 
@@ -107,9 +109,9 @@ export default function Dashboard({ user, onLogout }) {
 
       <ConfirmModal
         open={confirmLogout}
-        title="Log out"
-        message="Are you sure you want to log out of ABAP Git Versioning Console?"
-        confirmLabel="Log out"
+        title="Confirm Logout"
+        message="Are you sure you want to log out of ABAP Version Control System?"
+        confirmLabel="Logout"
         onConfirm={() => {
           setConfirmLogout(false);
           onLogout();
@@ -225,7 +227,6 @@ const styles = {
   },
   usernameTag: {
     display: "inline-block",
-    marginTop: 4,
     maxWidth: "100%",
     fontSize: 10.5,
     fontFamily: "monospace",
@@ -241,8 +242,6 @@ const styles = {
   },
   roleTag: {
     display: "inline-block",
-    marginTop: 4,
-    marginLeft: 6,
     fontSize: 10,
     fontWeight: 700,
     letterSpacing: 0.3,

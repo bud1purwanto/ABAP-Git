@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { api } from "../api/client";
 import DiffViewer from "./DiffViewer";
 import LoadingSpinner from "./LoadingSpinner";
@@ -8,6 +8,7 @@ import FullscreenDiffModal from "./FullscreenDiffModal";
 import { useToast } from "./ToastProvider";
 import { useServerValidation } from "../hooks/useServerValidation";
 import ServerValidationBadge from "./ServerValidationBadge";
+import { useDebounce } from "../hooks/useDebounce";
 
 const ENV_LABELS = { DEV: "Development", QA: "Quality Assurance", PROD: "Production" };
 
@@ -35,6 +36,11 @@ export default function SyncTab({ author }) {
   const [showFullscreen, setShowFullscreen] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const toast = useToast();
+
+  const debouncedProgram = useDebounce(programName, 600);
+  const prevProgramRef = useRef(programName);
+  const prevSourceRef = useRef(sourceId);
+  const prevTargetRef = useRef(targetId);
 
   const safeSandboxes = sandboxes || [];
   const sourceServers = safeSandboxes.filter((s) => s.environment !== "SANDBOX"); // DEV/QA/PROD
@@ -140,14 +146,30 @@ export default function SyncTab({ author }) {
     }
   }
 
-  async function handleCompare() {
-    if (!sourceId || !targetId || !programName) {
+  // Auto-compare when dependencies change
+  useEffect(() => {
+    if (debouncedProgram && sourceId && targetId && serversOk) {
+      if (
+        debouncedProgram !== prevProgramRef.current ||
+        sourceId !== prevSourceRef.current ||
+        targetId !== prevTargetRef.current
+      ) {
+        prevProgramRef.current = debouncedProgram;
+        prevSourceRef.current = sourceId;
+        prevTargetRef.current = targetId;
+        handleCompare(debouncedProgram);
+      }
+    }
+  }, [debouncedProgram, sourceId, targetId, serversOk]);
+
+  async function handleCompare(progName = programName) {
+    if (!sourceId || !targetId || !progName) {
       toast.error("Please select a source server, a target sandbox, and a program.");
       return;
     }
     setLoadingAction("compare");
     try {
-      const res = await api.syncCompare(sourceId, targetId, programName);
+      const res = await api.syncCompare(sourceId, targetId, progName);
       setSourceSource(res.source_code || "");
       setSandboxSource(res.sandbox_source || "");
       setIdentical(res.identical);
@@ -281,11 +303,11 @@ export default function SyncTab({ author }) {
           <button
             className="btn btn-primary"
             style={{ flex: 1 }}
-            onClick={handleCompare}
+            onClick={() => handleCompare(programName)}
             disabled={loadingAction === "compare" || !sourceId || !targetId || !programName || !serversOk}
             title={!serversOk ? "Server validation failed — resolve issues above first" : ""}
           >
-            {loadingAction === "compare" ? "Comparing..." : "Compare"}
+            {loadingAction === "compare" ? "Comparing..." : "↻ Refresh Compare"}
           </button>
           <button
             className="btn btn-success"

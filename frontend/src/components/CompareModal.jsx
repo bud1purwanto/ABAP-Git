@@ -4,6 +4,7 @@ import DiffViewer from "./DiffViewer";
 import LoadingSpinner from "./LoadingSpinner";
 import { useToast } from "./ToastProvider";
 import SearchableDropdown from "./SearchableDropdown";
+import CodeActionToolbar from "./CodeActionToolbar";
 
 export default function CompareModal({
   open,
@@ -11,7 +12,9 @@ export default function CompareModal({
   programName,
   sandboxId,
   history,
-  author
+  author,
+  initialLeft,
+  initialRight
 }) {
   const [leftSource, setLeftSource] = useState("");
   const [rightSource, setRightSource] = useState("");
@@ -32,15 +35,20 @@ export default function CompareModal({
 
   useEffect(() => {
     if (open && !leftSource && !rightSource) {
-      // Set initial defaults: Left = SAP (Newest), Right = Latest Commit (Older)
-      setLeftSource("SAP");
-      if (history.length > 0) {
-        setRightSource(String(history[0].id));
+      if (initialLeft && initialRight) {
+        setLeftSource(initialLeft);
+        setRightSource(initialRight);
       } else {
-        setRightSource("");
+        // Set initial defaults: Left = SAP (Newest), Right = Latest Commit (Older)
+        setLeftSource("SAP");
+        if (history.length > 0) {
+          setRightSource(String(history[0].id));
+        } else {
+          setRightSource("");
+        }
       }
     }
-  }, [open, history, leftSource, rightSource]);
+  }, [open, history, leftSource, rightSource, initialLeft, initialRight]);
 
   useEffect(() => {
     if (!open) return;
@@ -161,7 +169,21 @@ export default function CompareModal({
         <div style={{ ...styles.controlsRow, position: "relative", zIndex: 30 }}>
           <div style={styles.controlBox}>
             <SearchableDropdown
-              label="Left Side (Newer Version)"
+              label="Left Side (Older Version)"
+              value={rightSource}
+              onChange={(val) => setRightSource(val)}
+              options={rightOptions}
+              disabled={rightOptions.length === 0}
+              placeholder={rightOptions.length === 0 ? "No older versions available" : "Select older version..."}
+              freeSolo={false}
+            />
+          </div>
+          
+          <div style={styles.vsIcon}>VS</div>
+
+          <div style={styles.controlBox}>
+            <SearchableDropdown
+              label="Right Side (Newer Version)"
               value={leftSource}
               onChange={(val) => setLeftSource(val)}
               options={[
@@ -174,37 +196,29 @@ export default function CompareModal({
               freeSolo={false}
             />
           </div>
-          
-          <div style={styles.vsIcon}>VS</div>
-
-          <div style={styles.controlBox}>
-            <SearchableDropdown
-              label="Right Side (Older Version)"
-              value={rightSource}
-              onChange={(val) => setRightSource(val)}
-              options={rightOptions}
-              disabled={rightOptions.length === 0}
-              placeholder={rightOptions.length === 0 ? "No older versions available" : "Select older version..."}
-              freeSolo={false}
-            />
-          </div>
         </div>
 
         {(leftInfo || rightInfo) && (
           <div style={styles.commitMsgRow}>
-            <div style={styles.commitMsgBox}>
-              <div style={styles.commitMsgHeader}>
-                <span style={styles.commitMsgTitle}>💬 Left — {leftInfo?.title || "—"}</span>
-                {leftInfo?.meta && <span style={styles.commitMsgMeta}>{leftInfo.meta}</span>}
+            <div style={styles.commitMsgCol}>
+              <div style={styles.commitMsgBox}>
+                <div style={styles.commitMsgHeader}>
+                  <span style={styles.commitMsgTitle}>💬 Left (Older) — {rightInfo?.title || "—"}</span>
+                  {rightInfo?.meta && <span style={styles.commitMsgMeta}>{rightInfo.meta}</span>}
+                </div>
+                <div style={styles.commitMsgText}>{rightInfo?.message || "—"}</div>
               </div>
-              <div style={styles.commitMsgText}>{leftInfo?.message || "—"}</div>
+              <CodeActionToolbar sourceCode={rightCode} defaultFilename={rightInfo?.title ? `${programName}_${rightInfo.title}` : "older_version"} />
             </div>
-            <div style={styles.commitMsgBox}>
-              <div style={styles.commitMsgHeader}>
-                <span style={styles.commitMsgTitle}>💬 Right — {rightInfo?.title || "—"}</span>
-                {rightInfo?.meta && <span style={styles.commitMsgMeta}>{rightInfo.meta}</span>}
+            <div style={styles.commitMsgCol}>
+              <div style={styles.commitMsgBox}>
+                <div style={styles.commitMsgHeader}>
+                  <span style={styles.commitMsgTitle}>💬 Right (Newer) — {leftInfo?.title || "—"}</span>
+                  {leftInfo?.meta && <span style={styles.commitMsgMeta}>{leftInfo.meta}</span>}
+                </div>
+                <div style={styles.commitMsgText}>{leftInfo?.message || "—"}</div>
               </div>
-              <div style={styles.commitMsgText}>{rightInfo?.message || "—"}</div>
+              <CodeActionToolbar sourceCode={leftCode} defaultFilename={leftInfo?.title ? `${programName}_${leftInfo.title}` : "newer_version"} />
             </div>
           </div>
         )}
@@ -215,7 +229,7 @@ export default function CompareModal({
               <LoadingSpinner message="Fetching sources..." />
             </div>
           ) : (
-            <DiffViewer original={leftCode} modified={rightCode} sideBySide={true} />
+            <DiffViewer original={rightCode} modified={leftCode} sideBySide={true} />
           )}
         </div>
       </div>
@@ -317,6 +331,12 @@ const styles = {
     gap: 12,
     padding: "12px 24px 0",
     background: "var(--panel-bg)",
+  },
+  commitMsgCol: {
+    flex: 1,
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column",
   },
   commitMsgBox: {
     flex: 1,

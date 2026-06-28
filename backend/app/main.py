@@ -33,7 +33,7 @@ def seed_super_admin():
 
 seed_super_admin()
 
-app = FastAPI(title="ABAP Git and Versioning Middleware")
+app = FastAPI(title="ABAP Version Control System")
 
 app.add_middleware(
     CORSMiddleware,

@@ -1,4 +1,5 @@
 import DiffViewer from "./DiffViewer";
+import CodeActionToolbar from "./CodeActionToolbar";
 
 export default function FullscreenDiffModal({
   open,
@@ -27,22 +28,32 @@ export default function FullscreenDiffModal({
         </div>
 
         <div style={styles.legendRow}>
-          <div style={{ ...styles.legendBadge, borderColor: leftColor }}>
-            <span style={{ ...styles.legendDot, background: leftColor }} />
-            <div>
-              <div style={styles.legendLabel}>{leftLabel}</div>
-              {leftSubLabel && <div style={styles.legendSub}>{leftSubLabel}</div>}
+          <div style={styles.legendCol}>
+            <div style={{ ...styles.legendBadge, borderColor: leftColor }}>
+              <div style={styles.legendTextWrapper}>
+                <div style={styles.legendLabelWrapper}>
+                  <span style={{ ...styles.legendDot, background: leftColor }} />
+                  <div style={styles.legendLabel}>{leftLabel}</div>
+                </div>
+                {leftSubLabel && <div style={styles.legendSub}>{leftSubLabel}</div>}
+              </div>
             </div>
+            <CodeActionToolbar sourceCode={leftCode} defaultFilename={leftLabel || "left_source"} />
           </div>
 
           <div style={styles.arrow}>vs</div>
 
-          <div style={{ ...styles.legendBadge, borderColor: rightColor }}>
-            <span style={{ ...styles.legendDot, background: rightColor }} />
-            <div>
-              <div style={styles.legendLabel}>{rightLabel}</div>
-              {rightSubLabel && <div style={styles.legendSub}>{rightSubLabel}</div>}
+          <div style={styles.legendCol}>
+            <div style={{ ...styles.legendBadge, borderColor: rightColor }}>
+              <div style={styles.legendTextWrapper}>
+                <div style={styles.legendLabelWrapper}>
+                  <span style={{ ...styles.legendDot, background: rightColor }} />
+                  <div style={styles.legendLabel}>{rightLabel}</div>
+                </div>
+                {rightSubLabel && <div style={styles.legendSub}>{rightSubLabel}</div>}
+              </div>
             </div>
+            <CodeActionToolbar sourceCode={rightCode} defaultFilename={rightLabel || "right_source"} />
           </div>
         </div>
 
@@ -104,15 +115,31 @@ const styles = {
     background: "var(--panel-bg)",
     borderBottom: "1px solid var(--panel-border)",
   },
-  legendBadge: {
+  legendCol: {
     flex: 1,
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column",
+  },
+  legendBadge: {
     display: "flex",
     alignItems: "center",
+    justifyContent: "center",
     gap: 10,
     padding: "10px 14px",
     borderRadius: 10,
     border: "1px solid",
     background: "var(--input-bg)",
+  },
+  legendTextWrapper: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+  },
+  legendLabelWrapper: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
   },
   legendDot: {
     width: 10,

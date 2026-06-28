@@ -6,7 +6,7 @@ import LoadingSpinner from "./LoadingSpinner";
 import EnvironmentSelect from "./EnvironmentSelect";
 import { useToast } from "./ToastProvider";
 
-const EMPTY_FORM = { name: "", host: "", sysnr: "", client: "", rfc_user: "", rfc_password: "", environment: "SANDBOX" };
+const EMPTY_FORM = { name: "", host: "", sysnr: "", client: "", rfc_user: "", rfc_password: "", environment: "SANDBOX", allow_multiple_logon: true };
 
 const ENV_LABELS = {
   SANDBOX: "Sandbox",
@@ -29,6 +29,7 @@ export default function SandboxesTab({ currentUser }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const toast = useToast();
@@ -64,7 +65,6 @@ export default function SandboxesTab({ currentUser }) {
   }
 
   function startEdit(sb) {
-    setEditingId(sb.id);
     setForm({
       name: sb.name,
       host: sb.host,
@@ -73,7 +73,10 @@ export default function SandboxesTab({ currentUser }) {
       rfc_user: sb.rfc_user,
       rfc_password: "",
       environment: sb.environment,
+      allow_multiple_logon: sb.allow_multiple_logon,
     });
+    setEditingId(sb.id);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function handleSubmit(e) {
@@ -93,6 +96,34 @@ export default function SandboxesTab({ currentUser }) {
       toast.error(err.message);
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleTestConnection() {
+    if (!form.host || !form.sysnr || !form.client || !form.rfc_user) {
+      toast.error("Please fill in Host, System Number, Client, and RFC User first.");
+      return;
+    }
+    setTesting(true);
+    try {
+      const payload = {
+        sandbox_id: editingId,
+        host: form.host,
+        sysnr: form.sysnr,
+        client: form.client,
+        rfc_user: form.rfc_user,
+        rfc_password: form.rfc_password
+      };
+      const res = await api.testConnection(payload);
+      if (res.passed) {
+        toast.success(res.message);
+      } else {
+        toast.error(`Connection failed: ${res.message}`);
+      }
+    } catch (err) {
+      toast.error(`Error: ${err.message}`);
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -143,6 +174,37 @@ export default function SandboxesTab({ currentUser }) {
               </div>
             </div>
 
+            <div style={{ marginTop: 8 }}>
+              <label>Allow Multiple Logon</label>
+              <div style={{ display: "flex", gap: "16px", marginTop: "4px", flexWrap: "wrap" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: form.environment === "SANDBOX" ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
+                  <input
+                    type="radio"
+                    name="allow_multiple_logon"
+                    checked={form.environment === "SANDBOX" ? true : form.allow_multiple_logon === true}
+                    onChange={() => update("allow_multiple_logon", true)}
+                    disabled={form.environment === "SANDBOX"}
+                  />
+                  Yes
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: form.environment === "SANDBOX" ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
+                  <input
+                    type="radio"
+                    name="allow_multiple_logon"
+                    checked={form.environment === "SANDBOX" ? false : form.allow_multiple_logon === false}
+                    onChange={() => update("allow_multiple_logon", false)}
+                    disabled={form.environment === "SANDBOX"}
+                  />
+                  No (Enforce Audit)
+                </label>
+              </div>
+              <div style={styles.hint}>
+                {form.environment === "SANDBOX" 
+                  ? "Sandbox servers always allow multiple logons by default."
+                  : "If enabled, bypasses SAP multiple logon checks during deployment or compare operations."}
+              </div>
+            </div>
+
             <div>
               <label>Host</label>
               <input value={form.host} onChange={(e) => update("host", e.target.value)} placeholder="sap.example.com" required />
@@ -172,8 +234,17 @@ export default function SandboxesTab({ currentUser }) {
             </div>
 
             <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-              <button className="btn btn-primary" type="submit" disabled={submitting} style={{ flex: 1 }}>
+              <button className="btn btn-primary" type="submit" disabled={submitting || testing} style={{ flex: 1 }}>
                 {submitting ? "Saving..." : editingId ? "Save Changes" : "+ Add Server"}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={handleTestConnection}
+                disabled={testing || submitting}
+                style={{ flex: 1 }}
+              >
+                {testing ? "Testing..." : "Test Connection"}
               </button>
               {editingId && (
                 <button type="button" className="btn" onClick={resetForm}>
@@ -211,9 +282,14 @@ export default function SandboxesTab({ currentUser }) {
                       {ENV_LABELS[sb.environment] || sb.environment}
                     </span>
                   </div>
-                  <div style={styles.cardMeta}>
-                    {sb.host} · sysnr {sb.sysnr} · client {sb.client} · {sb.rfc_user}
+                  <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>
+                    <span style={{ color: "var(--accent-glow)" }}>★</span> <strong>System:</strong> {sb.sysnr} / {sb.client} · {sb.host}
                   </div>
+                  {sb.environment !== "SANDBOX" && (
+                    <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                      <span style={{ color: sb.allow_multiple_logon ? "var(--warning)" : "var(--accent-2)" }}>★</span> <strong>Multiple Logon:</strong> {sb.allow_multiple_logon ? "Allowed (Bypass)" : "Blocked (Audit)"}
+                    </div>
+                  )}
                 </div>
                 {isSuperAdmin && (
                   <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>

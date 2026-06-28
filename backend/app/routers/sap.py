@@ -7,7 +7,7 @@ from app.database import get_db
 from app.models.sandbox import Sandbox
 from app.models.program_version import ProgramVersion
 from app.models.activity_log import ActivityLog
-from app.schemas import SapReadResponse, SapWriteRequest
+from app.schemas import SapReadResponse, SapWriteRequest, SapTestConnectionRequest
 from pydantic import BaseModel
 from app.services import sap_service
 
@@ -357,7 +357,7 @@ def logon_check(sandbox_id: int, author: str | None = Query(default=None), db: S
     if not sandbox:
         raise HTTPException(status_code=404, detail="Server not found")
 
-    if sandbox.environment == "SANDBOX":
+    if sandbox.environment == "SANDBOX" or sandbox.allow_multiple_logon:
         return {
             "applicable": False,
             "environment": sandbox.environment,
@@ -435,3 +435,37 @@ def get_program_includes(sandbox_id: int, program: str = Query(...), db: Session
         return {"data": sap_service.get_program_includes(sandbox, program)}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to fetch program includes: {exc}") from exc
+
+
+@router.post("/test-connection")
+def test_connection(payload: SapTestConnectionRequest, db: Session = Depends(get_db)):
+    """Test SAP connection using provided credentials (without saving them)."""
+    password = payload.rfc_password
+
+    # If editing an existing sandbox and password wasn't changed/provided, fetch it from DB
+    if not password and payload.sandbox_id:
+        existing = db.query(Sandbox).filter(Sandbox.id == payload.sandbox_id).first()
+        if existing:
+            password = existing.rfc_password
+
+    if not password:
+        raise HTTPException(status_code=400, detail="RFC Password is required for connection test")
+
+    # Create a dummy Sandbox object in memory to pass to sap_service._connect
+    temp_sandbox = Sandbox(
+        host=payload.host,
+        sysnr=payload.sysnr,
+        client=payload.client,
+        rfc_user=payload.rfc_user,
+        rfc_password=password
+    )
+
+    try:
+        conn = sap_service._connect(temp_sandbox)
+        try:
+            conn.ping()
+        finally:
+            conn.close()
+        return {"passed": True, "message": "Connection successful"}
+    except Exception as exc:
+        return {"passed": False, "message": str(exc)}

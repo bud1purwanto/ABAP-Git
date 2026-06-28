@@ -4,6 +4,7 @@ import { useToast } from "./ToastProvider";
 import SearchableDropdown from "./SearchableDropdown";
 import ConfirmModal from "./ConfirmModal";
 import LoadingSpinner from "./LoadingSpinner";
+import CompareModal from "./CompareModal";
 
 export default function GitLogTab({ currentUser }) {
   const username = currentUser?.username;
@@ -34,6 +35,10 @@ export default function GitLogTab({ currentUser }) {
 
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+
+  const [showCompareModal, setShowCompareModal] = useState(false);
+  const [compareLeft, setCompareLeft] = useState(null);
+  const [compareRight, setCompareRight] = useState(null);
 
   const toast = useToast();
 
@@ -197,16 +202,27 @@ export default function GitLogTab({ currentUser }) {
   async function submitDelete() {
     if (!deleteTarget) return;
     setDeleteBusy(true);
-    try {
-      await api.deleteCommit(deleteTarget.id, username);
-      toast.success("Commit deleted.");
-      setDeleteTarget(null);
-      reloadHistory();
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setDeleteBusy(false);
+    api
+      .deleteCommit(deleteTarget.id, username)
+      .then(() => {
+        toast.success("Commit deleted.");
+        setDeleteTarget(null);
+        reloadHistory();
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setDeleteBusy(false));
+  }
+
+  function openCompare(commit, index) {
+    const left = String(commit.id);
+    const right = index + 1 < history.length ? String(history[index + 1].id) : null;
+    if (!right) {
+      toast.error("This is the initial commit. No previous version to compare against.");
+      return;
     }
+    setCompareLeft(left);
+    setCompareRight(right);
+    setShowCompareModal(true);
   }
 
   const formatDate = (dateStr) =>
@@ -312,7 +328,7 @@ export default function GitLogTab({ currentUser }) {
           <div style={styles.empty}>No commits found for this program.</div>
         ) : (
           <div style={styles.commitList}>
-            {history.map((commit) => {
+            {history.map((commit, index) => {
               const mine = commit.author === username;
               const allowed = canModifyCommit(commit);
               return (
@@ -332,6 +348,14 @@ export default function GitLogTab({ currentUser }) {
                     )}
                   </div>
                   <div style={styles.commitActions}>
+                    <button
+                      className="btn btn-secondary"
+                      style={styles.actionBtn}
+                      onClick={() => openCompare(commit, index)}
+                      title="Compare with previous version"
+                    >
+                      🔍 Compare
+                    </button>
                     <button
                       className="btn"
                       style={styles.actionBtn}
@@ -423,6 +447,19 @@ export default function GitLogTab({ currentUser }) {
         onConfirm={submitDelete}
         onCancel={() => !deleteBusy && setDeleteTarget(null)}
       />
+
+      {showCompareModal && (
+        <CompareModal
+          open={showCompareModal}
+          onClose={() => setShowCompareModal(false)}
+          programName={programName}
+          sandboxId={sandboxId}
+          history={history}
+          author={username}
+          initialLeft={compareLeft}
+          initialRight={compareRight}
+        />
+      )}
     </div>
   );
 }

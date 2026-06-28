@@ -1,8 +1,14 @@
 from app.config import settings
 
-PROMPT_TEMPLATE = """You are a senior ABAP developer writing a concise, professional Git commit message.
-Summarize the following diff of an SAP ABAP program{program_part}. Focus on WHAT changed and WHY if evident.
-Keep it to one short title line, optionally followed by a brief bullet list. Do not include markdown code fences.
+PROMPT_TEMPLATE = """Task: Summarize the following unified diff of an SAP ABAP program{program_part}.
+We need a highly detailed and informative Git commit message.
+
+Strict Rules:
+1. First line: Provide a clear, short title summarizing the main change (max 70 characters).
+2. Blank line.
+3. Next lines: Provide a detailed, informative bulleted list explaining exactly WHAT changed and WHY. Include specific variable names, logic changes, or function calls modified if applicable.
+4. DO NOT include any markdown formatting blocks like ` ``` ` around the whole message.
+5. DO NOT output any XML-like tags (like <thought>), internal thinking process, or introductory phrases. Output ONLY the final commit message string.
 
 DIFF:
 {diff}
@@ -18,7 +24,10 @@ def _generate_with_gemini(prompt: str) -> str:
     import google.generativeai as genai
 
     genai.configure(api_key=settings.GEMINI_API_KEY)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel(
+        "gemini-1.5-flash",
+        system_instruction="You are an expert SAP ABAP developer. You must output ONLY the final Git commit message. No markdown, no thoughts, no intro."
+    )
     response = model.generate_content(prompt)
     return response.text.strip()
 

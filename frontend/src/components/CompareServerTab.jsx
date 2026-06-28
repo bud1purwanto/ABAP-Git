@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { api } from "../api/client";
 import DiffViewer from "./DiffViewer";
 import LoadingSpinner from "./LoadingSpinner";
@@ -7,6 +7,7 @@ import FullscreenDiffModal from "./FullscreenDiffModal";
 import { useToast } from "./ToastProvider";
 import { useServerValidation } from "../hooks/useServerValidation";
 import ServerValidationBadge from "./ServerValidationBadge";
+import { useDebounce } from "../hooks/useDebounce";
 
 const ENV_LABELS = { SANDBOX: "Sandbox", DEV: "Development", QA: "Quality Assurance", PROD: "Production" };
 const ENV_RANK = { SANDBOX: 0, DEV: 1, QA: 2, PROD: 3 };
@@ -75,6 +76,11 @@ export default function CompareServerTab() {
   const [showFullscreen, setShowFullscreen] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const toast = useToast();
+
+  const debouncedProgram = useDebounce(programName, 600);
+  const prevProgramRef = useRef(programName);
+  const prevLeftRef = useRef(leftId);
+  const prevRightRef = useRef(rightId);
 
   const safeSandboxes = sandboxes || [];
   const selectedLeft = safeSandboxes.find((s) => String(s.id) === String(leftId));
@@ -192,14 +198,30 @@ export default function CompareServerTab() {
     if (match && match.program) setProgramName(match.program);
   }
 
-  async function handleCompare() {
-    if (!leftId || !rightId || !programName) {
+  // Auto-compare when dependencies change
+  useEffect(() => {
+    if (debouncedProgram && leftId && rightId && serversOk) {
+      if (
+        debouncedProgram !== prevProgramRef.current ||
+        leftId !== prevLeftRef.current ||
+        rightId !== prevRightRef.current
+      ) {
+        prevProgramRef.current = debouncedProgram;
+        prevLeftRef.current = leftId;
+        prevRightRef.current = rightId;
+        handleCompare(debouncedProgram);
+      }
+    }
+  }, [debouncedProgram, leftId, rightId, serversOk]);
+
+  async function handleCompare(progName = programName) {
+    if (!leftId || !rightId || !progName) {
       toast.error("Please select both servers and a program.");
       return;
     }
     setLoadingAction("compare");
     try {
-      const res = await api.compareServers(leftId, rightId, programName);
+      const res = await api.compareServers(leftId, rightId, progName);
       setLeftSource(res.left_source || "");
       setRightSource(res.right_source || "");
       setLeftTransport(res.left_transport || null);
@@ -307,11 +329,11 @@ export default function CompareServerTab() {
           <button
             className="btn btn-primary"
             style={{ flex: 1 }}
-            onClick={handleCompare}
+            onClick={() => handleCompare(programName)}
             disabled={loadingAction === "compare" || !leftId || !rightId || !programName || !serversOk}
             title={!serversOk ? "Server validation failed — resolve issues above first" : ""}
           >
-            {loadingAction === "compare" ? "Comparing..." : "Compare"}
+            {loadingAction === "compare" ? "Comparing..." : "↻ Refresh Compare"}
           </button>
         </div>
       </div>

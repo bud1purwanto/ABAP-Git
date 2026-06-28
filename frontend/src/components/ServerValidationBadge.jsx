@@ -13,7 +13,7 @@ export default function ServerValidationBadge({ checking, passed, message, onRet
     );
   }
 
-  if (passed === null) return null; // nothing selected yet
+  if (passed === null || message === "hidden") return null; // nothing selected yet or hidden
 
   if (!passed) {
     return (

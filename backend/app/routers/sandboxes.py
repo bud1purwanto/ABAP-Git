@@ -82,6 +82,8 @@ def update_sandbox(sandbox_id: int, payload: SandboxUpdate, db: Session = Depend
     if payload.rfc_password:
         sandbox.rfc_password = payload.rfc_password
     sandbox.environment = payload.environment
+    if payload.allow_multiple_logon is not None:
+        sandbox.allow_multiple_logon = payload.allow_multiple_logon
     sandbox.is_live = payload.environment == "DEV"
 
     db.commit()

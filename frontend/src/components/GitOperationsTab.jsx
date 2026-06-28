@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { api } from "../api/client";
 import DiffViewer from "./DiffViewer";
 import ActivityFeed from "./ActivityFeed";
@@ -8,6 +8,7 @@ import { useToast } from "./ToastProvider";
 import SearchableDropdown from "./SearchableDropdown";
 import CompareModal from "./CompareModal";
 import DeployLiveModal from "./DeployLiveModal";
+import { useDebounce } from "../hooks/useDebounce";
 
 
 export default function GitOperationsTab({ author }) {
@@ -26,6 +27,10 @@ export default function GitOperationsTab({ author }) {
   const [commitMessage, setCommitMessage] = useState("");
   const [parentVersionHash, setParentVersionHash] = useState(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+
+  const debouncedProgram = useDebounce(programName, 600);
+  const prevProgramRef = useRef(programName);
+  const prevSandboxRef = useRef(sandboxId);
 
   // SAP Metadata States
   const [tcode, setTCode] = useState("");
@@ -65,6 +70,21 @@ export default function GitOperationsTab({ author }) {
   }, [author]);
 
   // Fetch SAP Metadata when sandbox changes
+  // Auto-fetch when sandbox or program changes
+  useEffect(() => {
+    if (debouncedProgram && sandboxId && (debouncedProgram !== prevProgramRef.current || sandboxId !== prevSandboxRef.current)) {
+      prevProgramRef.current = debouncedProgram;
+      prevSandboxRef.current = sandboxId;
+      
+      // Auto-trigger fetch
+      // We pass the debounced program to loadHistory to ensure it's using the latest
+      loadHistory(debouncedProgram).then((h) => {
+        const vId = h && h.length > 0 ? h[0].id : "";
+        fetchAndCompare(vId, debouncedProgram);
+      });
+    }
+  }, [debouncedProgram, sandboxId]);
+
   useEffect(() => {
     if (!sandboxId) {
       setSapTCodes([]);
@@ -108,7 +128,7 @@ export default function GitOperationsTab({ author }) {
       setHistory([]);
       setSelectedVersionId("");
       setDbSource("");
-      return;
+      return [];
     }
     try {
       const h = await api.getHistory(name);
@@ -118,9 +138,11 @@ export default function GitOperationsTab({ author }) {
       } else {
         setSelectedVersionId("");
       }
+      return h;
     } catch {
       setHistory([]);
       setSelectedVersionId("");
+      return [];
     }
   }
 
@@ -168,10 +190,10 @@ export default function GitOperationsTab({ author }) {
     await fetchAndCompare(versionId);
   }
 
-  async function fetchAndCompare(versionId) {
+  async function fetchAndCompare(versionId, progName = programName) {
     setLoadingAction("fetch");
     try {
-      const res = await api.readFromSap(programName, sandboxId, versionId || undefined, author);
+      const res = await api.readFromSap(progName, sandboxId, versionId || undefined, author);
       setSapSource(res.sap_source);
       setDbSource(res.db_source || "");
       setDiff(res.diff);
@@ -413,7 +435,6 @@ export default function GitOperationsTab({ author }) {
                   value={programName}
                   onChange={(val) => {
                     handleProgramChange(val);
-                    loadHistory(val);
                   }}
                   options={
                     tcode
@@ -435,7 +456,7 @@ export default function GitOperationsTab({ author }) {
 
             <div className="git-ops-actions-row" style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleFetch} disabled={loadingAction === "fetch"}>
-                {loadingAction === "fetch" ? "Fetching..." : "Fetch Code from SAP"}
+                {loadingAction === "fetch" ? "Fetching..." : "↻ Refresh Status"}
               </button>
               <button 
                 className="btn btn-success" 

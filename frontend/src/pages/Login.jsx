@@ -29,7 +29,7 @@ export default function Login({ onLogin }) {
       </div>
       <div className="glass-panel" style={styles.card}>
         <div style={styles.logo}>⌬</div>
-        <h1 style={styles.title}>ABAP Git &amp; Versioning</h1>
+        <h1 style={styles.title}>ABAP Version Control System</h1>
         <p style={styles.subtitle}>Middleware Console</p>
 
         <form onSubmit={handleSubmit} style={styles.form}>

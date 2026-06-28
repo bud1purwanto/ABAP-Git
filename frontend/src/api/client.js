@@ -35,6 +35,7 @@ export const api = {
   updateSandbox: (id, data) => request(`/api/sandboxes/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteSandbox: (id, requestedBy) =>
     request(`/api/sandboxes/${id}?requested_by=${encodeURIComponent(requestedBy)}`, { method: "DELETE" }),
+  testConnection: (data) => request("/api/sap/test-connection", { method: "POST", body: JSON.stringify(data) }),
 
   getTCodes: (sandboxId) => request(`/api/sap/${sandboxId}/tcodes`),
   checkLogon: (sandboxId, author) => {
