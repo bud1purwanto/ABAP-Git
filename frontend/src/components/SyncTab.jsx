@@ -432,22 +432,17 @@ export default function SyncTab({ author }) {
         rightColor="var(--accent-2)"
         leftCode={sourceSource}
         rightCode={sandboxSource}
-        footer={
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-            <button className="btn" onClick={() => setShowFullscreen(false)}>
-              Close
-            </button>
-            <button
-              className="btn btn-success"
-              disabled={!canSync}
-              onClick={() => {
-                setShowFullscreen(false);
-                setConfirmSync(true);
-              }}
-            >
-              {syncLabel}
-            </button>
-          </div>
+        headerActions={
+          <button
+            className="btn btn-success"
+            disabled={!canSync}
+            onClick={() => {
+              setShowFullscreen(false);
+              setConfirmSync(true);
+            }}
+          >
+            {syncLabel}
+          </button>
         }
       />
 

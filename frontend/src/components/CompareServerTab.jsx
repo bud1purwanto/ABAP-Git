@@ -404,13 +404,6 @@ export default function CompareServerTab() {
         rightColor="#f59e0b"
         leftCode={leftSource}
         rightCode={rightSource}
-        footer={
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <button className="btn" onClick={() => setShowFullscreen(false)}>
-              Close
-            </button>
-          </div>
-        }
       />
     </div>
   );

@@ -18,6 +18,7 @@ export default function CompareModal({
 }) {
   const [leftSource, setLeftSource] = useState("");
   const [rightSource, setRightSource] = useState("");
+  const [showTop, setShowTop] = useState(true);
   
   const [leftCode, setLeftCode] = useState("");
   const [rightCode, setRightCode] = useState("");
@@ -165,13 +166,35 @@ export default function CompareModal({
       <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
         <div style={styles.header}>
           <h2 style={styles.title}>🔍 Advanced Compare: {programName}</h2>
-          <button style={styles.closeBtn} onClick={onClose}>✕</button>
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <button 
+              className="btn btn-secondary" 
+              style={{ fontSize: 12, padding: "4px 10px" }} 
+              onClick={() => setShowTop(!showTop)}
+            >
+              {showTop ? "⛶ Maximize Diff" : "🗗 Show Details"}
+            </button>
+            <button style={styles.closeBtn} onClick={onClose}>✕</button>
+          </div>
         </div>
 
-        <div style={{ ...styles.controlsRow, position: "relative", zIndex: 30 }}>
+        {showTop && (
+          <>
+            <div style={{ ...styles.controlsRow, position: "relative", zIndex: 30 }}>
           <div style={styles.controlBox}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 6 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", letterSpacing: 0.5 }}>
+                LEFT SIDE (OLDER VERSION)
+              </div>
+              {rightCode && (
+                <CodeActionToolbar 
+                  sourceCode={rightCode} 
+                  defaultFilename={rightInfo?.title ? `${programName}_${rightInfo.title}` : "older_version"} 
+                  containerStyle={{ marginTop: 0, padding: 0 }} 
+                />
+              )}
+            </div>
             <SearchableDropdown
-              label="Left Side (Older Version)"
               value={rightSource}
               onChange={(val) => setRightSource(val)}
               options={rightOptions}
@@ -184,8 +207,19 @@ export default function CompareModal({
           <div style={styles.vsIcon}>VS</div>
 
           <div style={styles.controlBox}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 6 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", letterSpacing: 0.5 }}>
+                RIGHT SIDE (NEWER VERSION)
+              </div>
+              {leftCode && (
+                <CodeActionToolbar 
+                  sourceCode={leftCode} 
+                  defaultFilename={leftInfo?.title ? `${programName}_${leftInfo.title}` : "newer_version"} 
+                  containerStyle={{ marginTop: 0, padding: 0 }} 
+                />
+              )}
+            </div>
             <SearchableDropdown
-              label="Right Side (Newer Version)"
               value={leftSource}
               onChange={(val) => setLeftSource(val)}
               options={[
@@ -208,9 +242,8 @@ export default function CompareModal({
                   <span style={styles.commitMsgTitle}>💬 Left (Older) — {rightInfo?.title || "—"}</span>
                   {rightInfo?.meta && <span style={styles.commitMsgMeta}>{rightInfo.meta}</span>}
                 </div>
-                <div style={styles.commitMsgText}>{rightInfo?.message || "—"}</div>
+                <CommitMessageText message={rightInfo?.message} />
               </div>
-              <CodeActionToolbar sourceCode={rightCode} defaultFilename={rightInfo?.title ? `${programName}_${rightInfo.title}` : "older_version"} />
             </div>
             <div style={styles.commitMsgCol}>
               <div style={styles.commitMsgBox}>
@@ -218,11 +251,12 @@ export default function CompareModal({
                   <span style={styles.commitMsgTitle}>💬 Right (Newer) — {leftInfo?.title || "—"}</span>
                   {leftInfo?.meta && <span style={styles.commitMsgMeta}>{leftInfo.meta}</span>}
                 </div>
-                <div style={styles.commitMsgText}>{leftInfo?.message || "—"}</div>
+                <CommitMessageText message={leftInfo?.message} />
               </div>
-              <CodeActionToolbar sourceCode={leftCode} defaultFilename={leftInfo?.title ? `${programName}_${leftInfo.title}` : "newer_version"} />
             </div>
           </div>
+        )}
+        </>
         )}
 
         <div style={styles.diffContainer}>
@@ -235,6 +269,43 @@ export default function CompareModal({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function CommitMessageText({ message }) {
+  const [expanded, setExpanded] = useState(false);
+  
+  if (!message || message === "—") {
+    return <div style={styles.commitMsgText}>—</div>;
+  }
+
+  const isLong = message.length > 80 || message.includes("\n");
+
+  if (!isLong) {
+    return <div style={styles.commitMsgText}>{message}</div>;
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+      <div style={{
+        ...styles.commitMsgText,
+        display: expanded ? "block" : "-webkit-box",
+        WebkitLineClamp: expanded ? "unset" : 1,
+        WebkitBoxOrient: "vertical",
+        overflow: "hidden",
+      }}>
+        {message}
+      </div>
+      <button 
+        onClick={() => setExpanded(!expanded)}
+        style={{ 
+          background: "none", border: "none", color: "var(--accent-2)", 
+          fontSize: 11, cursor: "pointer", padding: "4px 0 0 0", fontWeight: 600
+        }}
+      >
+        {expanded ? "Read less ▴" : "Read more ▾"}
+      </button>
     </div>
   );
 }
@@ -364,8 +435,6 @@ const styles = {
     whiteSpace: "pre-wrap",
     wordBreak: "break-word",
     lineHeight: 1.45,
-    maxHeight: 80,
-    overflowY: "auto",
   },
   diffContainer: {
     flex: 1,

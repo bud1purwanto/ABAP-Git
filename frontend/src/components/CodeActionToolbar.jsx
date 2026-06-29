@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useToast } from "./ToastProvider";
 
-export default function CodeActionToolbar({ sourceCode, defaultFilename = "source" }) {
+export default function CodeActionToolbar({ sourceCode, defaultFilename = "source", containerStyle = {} }) {
   const [format, setFormat] = useState(".abap");
   const toast = useToast();
 
@@ -36,7 +36,7 @@ export default function CodeActionToolbar({ sourceCode, defaultFilename = "sourc
   };
 
   return (
-    <div style={styles.toolbar}>
+    <div style={{ ...styles.toolbar, ...containerStyle }}>
       <button className="btn btn-secondary" style={styles.btn} onClick={handleCopy} title="Copy Source Code">
         📋 Copy
       </button>

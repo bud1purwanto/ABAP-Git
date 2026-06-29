@@ -1,3 +1,4 @@
+import React, { useState } from "react";
 import DiffViewer from "./DiffViewer";
 import CodeActionToolbar from "./CodeActionToolbar";
 
@@ -13,8 +14,10 @@ export default function FullscreenDiffModal({
   rightColor = "#f43f5e",
   leftCode,
   rightCode,
-  footer,
+  headerActions,
 }) {
+  const [showTop, setShowTop] = useState(true);
+
   if (!open) return null;
 
   return (
@@ -22,14 +25,26 @@ export default function FullscreenDiffModal({
       <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
         <div style={styles.header}>
           <h2 style={styles.title}>{title}</h2>
-          <button style={styles.closeBtn} onClick={onClose}>
-            ✕
-          </button>
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <button 
+              className="btn btn-secondary" 
+              style={{ fontSize: 12, padding: "4px 10px" }} 
+              onClick={() => setShowTop(!showTop)}
+            >
+              {showTop ? "⛶ Maximize Diff" : "🗗 Show Details"}
+            </button>
+            {headerActions}
+            <button style={styles.closeBtn} onClick={onClose}>
+              ✕
+            </button>
+          </div>
         </div>
 
+        {showTop && (
         <div style={styles.legendRow}>
           <div style={styles.legendCol}>
-            <div style={{ ...styles.legendBadge, borderColor: leftColor }}>
+            <div style={{ ...styles.legendBadge, borderColor: leftColor, justifyContent: "space-between" }}>
+              <div style={{ width: 80 }} /> {/* Spacer for centering */}
               <div style={styles.legendTextWrapper}>
                 <div style={styles.legendLabelWrapper}>
                   <span style={{ ...styles.legendDot, background: leftColor }} />
@@ -37,14 +52,21 @@ export default function FullscreenDiffModal({
                 </div>
                 {leftSubLabel && <div style={styles.legendSub}>{leftSubLabel}</div>}
               </div>
+              {leftCode && (
+                <CodeActionToolbar 
+                  sourceCode={leftCode} 
+                  defaultFilename={leftLabel || "left_source"} 
+                  containerStyle={{ marginTop: 0 }}
+                />
+              )}
             </div>
-            <CodeActionToolbar sourceCode={leftCode} defaultFilename={leftLabel || "left_source"} />
           </div>
 
           <div style={styles.arrow}>vs</div>
 
           <div style={styles.legendCol}>
-            <div style={{ ...styles.legendBadge, borderColor: rightColor }}>
+            <div style={{ ...styles.legendBadge, borderColor: rightColor, justifyContent: "space-between" }}>
+              <div style={{ width: 80 }} /> {/* Spacer for centering */}
               <div style={styles.legendTextWrapper}>
                 <div style={styles.legendLabelWrapper}>
                   <span style={{ ...styles.legendDot, background: rightColor }} />
@@ -52,16 +74,21 @@ export default function FullscreenDiffModal({
                 </div>
                 {rightSubLabel && <div style={styles.legendSub}>{rightSubLabel}</div>}
               </div>
+              {rightCode && (
+                <CodeActionToolbar 
+                  sourceCode={rightCode} 
+                  defaultFilename={rightLabel || "right_source"} 
+                  containerStyle={{ marginTop: 0 }}
+                />
+              )}
             </div>
-            <CodeActionToolbar sourceCode={rightCode} defaultFilename={rightLabel || "right_source"} />
           </div>
         </div>
+        )}
 
         <div style={styles.diffContainer}>
           <DiffViewer original={leftCode} modified={rightCode} sideBySide={true} />
         </div>
-
-        {footer && <div style={styles.footer}>{footer}</div>}
       </div>
     </div>
   );
@@ -161,9 +188,4 @@ const styles = {
     flexShrink: 0,
   },
   diffContainer: { flex: 1, padding: 16, minHeight: 0, display: "flex", flexDirection: "column" },
-  footer: {
-    padding: "12px 24px",
-    borderTop: "1px solid var(--panel-border)",
-    background: "var(--panel-bg)",
-  },
 };
