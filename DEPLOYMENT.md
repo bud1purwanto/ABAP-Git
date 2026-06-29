@@ -148,16 +148,15 @@ git pull origin main
 ### 2. Update Backend (Jika ada library python baru & fitur baru)
 ```bash
 source backend/venv/bin/activate
-pip install -r backend/requirements.txt  # Opsional: Jika Anda menambahkan package Python baru di GitHub
-pm2 restart abap-backend                 # Restart backend agar memuat kode python terbaru
+pip install -r backend/requirements.txt  # Opsional: Jika ada package Python baru
+sudo systemctl restart abapgit-backend   # Restart service systemd backend
 ```
 
 ### 3. Update Frontend (Jika ada perubahan Tampilan UI/React)
 ```bash
 cd frontend
 npm install        # Opsional: Jika Anda menambah library Node baru
-npm run build      # Wajib jika ada perubahan tampilan UI agar folder 'dist' diperbarui
-pm2 restart abap-frontend
+npm run build      # Wajib agar folder 'dist' diperbarui untuk dibaca oleh Nginx
 ```
 
 Aplikasi Anda kini sudah selesai di-*update* dan langsung aktif!

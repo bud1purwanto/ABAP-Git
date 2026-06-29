@@ -15,6 +15,38 @@ const ACTION_COLORS = {
   DELETE: "var(--text-muted)",
 };
 
+function CollapsibleMessage({ message }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!message) return <span style={{ color: "var(--text-muted)" }}>—</span>;
+  
+  const isLong = message.length > 60 || message.includes("\n");
+  if (!isLong) return <span>{message}</span>;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+      <div style={{
+        display: expanded ? "block" : "-webkit-box",
+        WebkitLineClamp: expanded ? "unset" : 1,
+        WebkitBoxOrient: "vertical",
+        overflow: "hidden",
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word"
+      }}>
+        {message}
+      </div>
+      <button 
+        onClick={() => setExpanded(!expanded)}
+        style={{ 
+          background: "none", border: "none", color: "var(--accent-2)", 
+          fontSize: 11, cursor: "pointer", padding: "4px 0 0 0", fontWeight: 600
+        }}
+      >
+        {expanded ? "Read less ▴" : "Read more ▾"}
+      </button>
+    </div>
+  );
+}
+
 export default function ActivityFeed({ activity, history }) {
   const toast = useToast();
   const [copiedId, setCopiedId] = useState(null);
@@ -38,10 +70,12 @@ export default function ActivityFeed({ activity, history }) {
           <tbody>
             {history.map((h) => (
               <tr key={h.id} style={styles.row}>
-                <td style={styles.hashCell} onClick={() => copyHash(h)} title="Click to copy">
-                  {copiedId === h.id ? "✓ copied" : h.version_hash}
+                <td style={styles.hashCell} onClick={() => copyHash(h)} title="Click to copy full commit hash">
+                  {copiedId === h.id ? "✓ copied" : `v${h.version_number}`}
                 </td>
-                <td style={styles.msgCell}>{h.commit_message}</td>
+                <td style={styles.msgCell}>
+                  <CollapsibleMessage message={h.commit_message} />
+                </td>
                 <td style={styles.metaCell}>{h.author}</td>
                 <td style={styles.metaCell}>{formatDateTime(h.created_at)}</td>
               </tr>

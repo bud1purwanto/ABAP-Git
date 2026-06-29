@@ -1,18 +1,32 @@
 from app.config import settings
 
-PROMPT_TEMPLATE = """Task: Summarize the following unified diff of an SAP ABAP program{program_part}.
-We need a highly detailed and informative Git commit message.
+PROMPT_TEMPLATE = """Task: Analyze the unified diff of the SAP ABAP program{program_part} and generate a professional Git commit message.
 
-Strict Rules:
-1. First line: Provide a clear, short title summarizing the main change (max 70 characters).
-2. Blank line.
-3. Next lines: Provide a detailed, informative bulleted list explaining exactly WHAT changed and WHY. Include specific variable names, logic changes, or function calls modified if applicable.
-4. DO NOT include any markdown formatting blocks like ` ``` ` around the whole message.
-5. DO NOT output any XML-like tags (like <thought>), internal thinking process, or introductory phrases. Output ONLY the final commit message string.
+FORMAT REQUIREMENTS (Strictly follow this exact structure):
+[Short title summarizing the main change (max 50 chars)]
+
+- [Detailed bullet point 1 explaining WHAT changed and WHY]
+- [Detailed bullet point 2 (if applicable)]
+
+CRITICAL RULES:
+1. DO NOT wrap the output in markdown code blocks (```).
+2. DO NOT output raw diff chunks (like @@ -...).
+3. DO NOT output any conversational text, introductory phrases, or thought processes. Output ONLY the raw commit message text itself.
 
 DIFF:
 {diff}
 """
+
+def _clean_response(text: str) -> str:
+    import re
+    # Remove <thought> blocks
+    text = re.sub(r"<thought>.*?</thought>", "", text, flags=re.DOTALL)
+    # Remove markdown code blocks if the AI ignored instructions
+    text = re.sub(r"```[a-zA-Z]*\n", "", text)
+    text = re.sub(r"```\s*$", "", text)
+    # Remove weird conversational artifacts like "Here is the commit message:"
+    text = re.sub(r"^(Here is|This is)[\s\S]*?:\n+", "", text, flags=re.IGNORECASE)
+    return text.strip()
 
 
 def _build_prompt(diff: str, program_name: str | None) -> str:
@@ -29,7 +43,7 @@ def _generate_with_gemini(prompt: str) -> str:
         system_instruction="You are an expert SAP ABAP developer. You must output ONLY the final Git commit message. No markdown, no thoughts, no intro."
     )
     response = model.generate_content(prompt)
-    return response.text.strip()
+    return _clean_response(response.text)
 
 
 def _generate_with_anthropic(prompt: str) -> str:
@@ -41,7 +55,7 @@ def _generate_with_anthropic(prompt: str) -> str:
         max_tokens=300,
         messages=[{"role": "user", "content": prompt}],
     )
-    return message.content[0].text.strip()
+    return _clean_response(message.content[0].text)
 
 
 def _generate_with_openrouter(prompt: str) -> str:
@@ -62,7 +76,7 @@ def _generate_with_openrouter(prompt: str) -> str:
     )
     response.raise_for_status()
     data = response.json()
-    return data["choices"][0]["message"]["content"].strip()
+    return _clean_response(data["choices"][0]["message"]["content"])
 
 
 def generate_commit_message(diff: str, program_name: str | None = None) -> str:
