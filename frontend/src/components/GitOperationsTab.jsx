@@ -340,7 +340,7 @@ export default function GitOperationsTab({ author }) {
       <div className="git-ops-main-column">
         <div className="git-ops-layout" style={{ marginBottom: 20, position: "relative", zIndex: 30 }}>
           <div className="glass-panel git-ops-programs-panel">
-          <h3 style={styles.panelTitle}>Programs</h3>
+          <h3 style={styles.panelTitle}>History Commit Program</h3>
           <input
             value={programSearch}
             onChange={(e) => {
