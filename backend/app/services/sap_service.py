@@ -433,7 +433,10 @@ def check_live_deployment_rules_sequential(sandbox: Sandbox, program_name: str, 
                 "RFC_READ_TABLE",
                 QUERY_TABLE="TADIR",
                 DELIMITER="|",
-                OPTIONS=[{"TEXT": f"PGMID = 'R3TR' AND OBJECT = 'PROG' AND OBJ_NAME = '{program_name}'"}],
+                OPTIONS=[
+                    {"TEXT": "PGMID = 'R3TR' AND OBJECT = 'PROG'"},
+                    {"TEXT": f"AND OBJ_NAME = '{program_name}'"}
+                ],
                 FIELDS=[{"FIELDNAME": "OBJ_NAME"}, {"FIELDNAME": "DEVCLASS"}],
                 ROWCOUNT=50,
             )
@@ -446,71 +449,88 @@ def check_live_deployment_rules_sequential(sandbox: Sandbox, program_name: str, 
                     break
 
             if matched_devclass is None:
-                add("package", "Package Check (ZTRD)", False,
-                    f"Program '{program_name}' was not found in the Live server's object repository (TADIR). "
-                    "It must be registered under package ZTRD before it can be deployed.")
+                add("package", "Package Check (ZTRD / $TMP)", False,
+                    f"Program '{program_name}' was not found in the SAP object repository (TADIR). "
+                    "It must be registered under package ZTRD or $TMP before it can be deployed.")
                 return results  # STOP
-            if matched_devclass != "ZTRD":
-                add("package", "Package Check (ZTRD)", False,
-                    f"Program must belong to package ZTRD. "
-                    f"Current package is '{matched_devclass}'. Move it to ZTRD via SE80 / TADIR.")
+            
+            if matched_devclass not in ["ZTRD", "$TMP"]:
+                add("package", "Package Check (ZTRD / $TMP)", False,
+                    f"Program must belong to package ZTRD or $TMP. "
+                    f"Current package is '{matched_devclass}'. Move it to ZTRD or $TMP via SE80 / TADIR.")
                 return results  # STOP
-            add("package", "Package Check (ZTRD)", True,
-                f"Program is correctly registered under package ZTRD.")
+                
+            add("package", "Package Check (ZTRD / $TMP)", True,
+                f"Program is correctly registered under package {matched_devclass}.")
         except Exception as exc:
-            add("package", "Package Check (ZTRD)", False,
+            add("package", "Package Check (ZTRD / $TMP)", False,
                 f"Could not verify package (RFC error: {exc}). Deploy blocked.")
             return results  # STOP
 
         # ── Rule 4: Open Transport Request (fail-closed) ─────────────────────
-        try:
-            res_e071 = conn.call(
-                "RFC_READ_TABLE",
-                QUERY_TABLE="E071",
-                DELIMITER="|",
-                OPTIONS=[{"TEXT": f"PGMID = 'R3TR' AND OBJECT = 'PROG' AND OBJ_NAME = '{program_name}'"}],
-                FIELDS=[{"FIELDNAME": "OBJ_NAME"}, {"FIELDNAME": "TRKORR"}],
-                ROWCOUNT=50,
-            )
-            tr_list = []
-            for row in res_e071.get("DATA", []):
-                parts = row["WA"].split("|")
-                if len(parts) >= 2 and parts[0].strip().upper() == program_name.upper():
-                    tr_list.append(parts[1].strip())
-
-            if not tr_list:
-                add("transport_request", "Transport Request Check", False,
-                    f"Program '{program_name}' is not included in any Transport Request. "
-                    "Add it to an open CR via SE09 / SE10 before deploying.")
-                return results  # STOP
-
-            tr_in_clause = ", ".join([f"'{tr}'" for tr in tr_list])
-            res_e070 = conn.call(
-                "RFC_READ_TABLE",
-                QUERY_TABLE="E070",
-                DELIMITER="|",
-                OPTIONS=[{"TEXT": f"TRKORR IN ({tr_in_clause}) AND TRSTATUS = 'D'"}],
-                FIELDS=[{"FIELDNAME": "TRKORR"}, {"FIELDNAME": "TRSTATUS"}],
-                ROWCOUNT=50,
-            )
-            matched_tr = None
-            for row in res_e070.get("DATA", []):
-                parts = row["WA"].split("|")
-                if len(parts) >= 2 and parts[0].strip() in tr_list and parts[1].strip() == "D":
-                    matched_tr = parts[0].strip()
-                    break
-
-            if not matched_tr:
-                add("transport_request", "Transport Request Check", False,
-                    f"Program '{program_name}' is not in an OPEN (Modifiable) Transport Request. "
-                    f"Found CR(s): {', '.join(tr_list)} — all are already released or have an invalid status.")
-                return results  # STOP
+        if matched_devclass == "$TMP":
             add("transport_request", "Transport Request Check", True,
-                f"Program is included in open Transport Request '{matched_tr}'.")
-        except Exception as exc:
-            add("transport_request", "Transport Request Check", False,
-                f"Could not verify Transport Request (RFC error: {exc}). Deploy blocked.")
-            return results  # STOP
+                "Program is a Local Object ($TMP), so no Transport Request is required.")
+        else:
+            try:
+                res_e071 = conn.call(
+                    "RFC_READ_TABLE",
+                    QUERY_TABLE="E071",
+                    DELIMITER="|",
+                    OPTIONS=[
+                        {"TEXT": "PGMID = 'R3TR' AND OBJECT = 'PROG'"},
+                        {"TEXT": f"AND OBJ_NAME = '{program_name}'"}
+                    ],
+                    FIELDS=[{"FIELDNAME": "OBJ_NAME"}, {"FIELDNAME": "TRKORR"}],
+                    ROWCOUNT=50,
+                )
+                tr_list = []
+                for row in res_e071.get("DATA", []):
+                    parts = row["WA"].split("|")
+                    if len(parts) >= 2 and parts[0].strip().upper() == program_name.upper():
+                        tr = parts[1].strip()
+                        # Only include standard Workbench Requests/Tasks (e.g. TRDK900123)
+                        if len(tr) >= 4 and tr[3] == 'K':
+                            tr_list.append(tr)
+
+                if not tr_list:
+                    add("transport_request", "Transport Request Check", False,
+                        f"Program '{program_name}' is not included in any Transport Request. "
+                        "Add it to an open CR via SE09 / SE10 before deploying.")
+                    return results  # STOP
+
+                e070_options = [{"TEXT": "("}]
+                for i, tr in enumerate(tr_list):
+                    prefix = "" if i == 0 else "OR "
+                    e070_options.append({"TEXT": f"{prefix}TRKORR = '{tr}'"})
+                e070_options.append({"TEXT": ") AND TRSTATUS = 'D'"})
+
+                res_e070 = conn.call(
+                    "RFC_READ_TABLE",
+                    QUERY_TABLE="E070",
+                    DELIMITER="|",
+                    OPTIONS=e070_options,
+                    FIELDS=[{"FIELDNAME": "TRKORR"}, {"FIELDNAME": "TRSTATUS"}],
+                    ROWCOUNT=50,
+                )
+                matched_tr = None
+                for row in res_e070.get("DATA", []):
+                    parts = row["WA"].split("|")
+                    if len(parts) >= 2 and parts[0].strip() in tr_list and parts[1].strip() == "D":
+                        matched_tr = parts[0].strip()
+                        break
+
+                if not matched_tr:
+                    add("transport_request", "Transport Request Check", False,
+                        f"Program '{program_name}' is not in an OPEN (Modifiable) Transport Request. "
+                        f"Found CR(s): {', '.join(tr_list)} — all are already released or have an invalid status.")
+                    return results  # STOP
+                add("transport_request", "Transport Request Check", True,
+                    f"Program is included in open Transport Request '{matched_tr}'.")
+            except Exception as exc:
+                add("transport_request", "Transport Request Check", False,
+                    f"Could not verify Transport Request (RFC error: {exc}). Deploy blocked.")
+                return results  # STOP
 
         return results
 

@@ -5,7 +5,7 @@ import { api } from "../api/client";
 const ALL_RULES = [
   { key: "multiple_logon", label: "Multiple Logon Check", icon: "👤" },
   { key: "sap_lock", label: "SAP Lock / Edit Check", icon: "🔒" },
-  { key: "package", label: "Package Check (ZTRD)", icon: "📦" },
+  { key: "package", label: "Package Check (ZTRD / $TMP)", icon: "📦" },
   { key: "transport_request", label: "Transport Request Check", icon: "🚚" },
 ];
 
