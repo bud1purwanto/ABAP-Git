@@ -219,6 +219,14 @@ def get_history(program_name: str = Query(...), author: str | None = Query(defau
     return query.order_by(ProgramVersion.created_at.desc()).all()
 
 
+@router.get("/commits", response_model=list[ProgramVersionOut])
+def get_all_commits(skip: int = 0, limit: int = 50, author: str | None = Query(default=None), db: Session = Depends(get_db)):
+    query = db.query(ProgramVersion)
+    if author:
+        query = query.filter(ProgramVersion.author == author)
+    return query.order_by(ProgramVersion.created_at.desc()).offset(skip).limit(limit).all()
+
+
 @router.get("/programs", response_model=list[ProgramSummary])
 def list_programs(search: str | None = Query(default=None), author: str | None = Query(default=None), db: Session = Depends(get_db)):
     """Distinct programs ever committed, each with its most recent version info."""

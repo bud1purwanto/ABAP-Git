@@ -1,6 +1,6 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime
+from sqlalchemy import Column, Integer, String, Text, DateTime, event
 from sqlalchemy.sql import func
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.database import Base
 
@@ -15,3 +15,15 @@ class ActivityLog(Base):
     sandbox_name = Column(String(100), nullable=True)
     detail = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+@event.listens_for(ActivityLog, "after_insert")
+def auto_prune_old_logs(mapper, connection, target):
+    """
+    Automatically delete logs older than 30 days every time a new log is inserted.
+    This runs inside the same transaction as the insert.
+    """
+    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    connection.execute(
+        ActivityLog.__table__.delete().where(ActivityLog.created_at < thirty_days_ago)
+    )

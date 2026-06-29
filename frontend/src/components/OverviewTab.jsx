@@ -3,6 +3,7 @@ import LoadingSpinner from "./LoadingSpinner";
 import { api } from "../api/client";
 import { useToast } from "./ToastProvider";
 import { ENV_META } from "./EnvironmentSelect";
+import PaginatedListModal from "./PaginatedListModal";
 
 const ENV_ORDER = ["SANDBOX", "DEV", "QA", "PROD"];
 const ENV_SHORT = { SANDBOX: "Sandbox", DEV: "DEV", QA: "QA", PROD: "PROD" };
@@ -14,12 +15,20 @@ function formatDateTime(dateStr) {
   }).format(new Date(dateStr));
 }
 
+const ACTION_MAPPING = {
+  PULL: "FETCH",
+  DEPLOY_LIVE: "DEPLOY",
+  PUSH: "ROLLBACK",
+  COMMIT: "COMMIT",
+  DELETE: "DELETE",
+};
+
 const ACTION_COLORS = {
-  PULL: "var(--accent-2)",
-  PUSH: "var(--danger)",
+  FETCH: "var(--accent-2)",
+  ROLLBACK: "var(--danger)",
   COMMIT: "var(--success)",
   DELETE: "var(--text-muted)",
-  DEPLOY_LIVE: "#f43f5e",
+  DEPLOY: "#f43f5e",
 };
 
 const CARDS = [
@@ -31,6 +40,8 @@ const CARDS = [
 
 export default function OverviewTab({ username }) {
   const [stats, setStats] = useState(null);
+  const [showCommitsModal, setShowCommitsModal] = useState(false);
+  const [showActivityModal, setShowActivityModal] = useState(false);
   const toast = useToast();
 
   useEffect(() => {
@@ -103,6 +114,11 @@ export default function OverviewTab({ username }) {
               </div>
             ))}
           </div>
+          {stats && stats.recent_commits.length > 0 && (
+            <div style={{ marginTop: 16, textAlign: "center" }}>
+              <button className="btn" style={{ width: "100%" }} onClick={() => setShowCommitsModal(true)}>Show all commits</button>
+            </div>
+          )}
         </div>
 
         <div className="glass-panel" style={styles.activityPanel}>
@@ -111,10 +127,12 @@ export default function OverviewTab({ username }) {
             <div style={styles.empty}>No activity recorded yet. Start by pulling a program from SAP.</div>
           )}
           <div style={styles.activityList}>
-            {(stats?.recent_activity || []).map((a) => (
+            {(stats?.recent_activity || []).map((a) => {
+              const displayAction = ACTION_MAPPING[a.action] || a.action;
+              return (
               <div key={a.id} style={styles.activityItem}>
-                <span style={{ ...styles.actionBadge, color: ACTION_COLORS[a.action] || "var(--text-secondary)" }}>
-                  {a.action}
+                <span style={{ ...styles.actionBadge, color: ACTION_COLORS[displayAction] || "var(--text-secondary)" }}>
+                  {displayAction}
                 </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={styles.activityDetail}>{a.detail}</div>
@@ -123,10 +141,58 @@ export default function OverviewTab({ username }) {
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
+          {stats && stats.recent_activity.length > 0 && (
+            <div style={{ marginTop: 16, textAlign: "center" }}>
+              <button className="btn" style={{ width: "100%", padding: "8px" }} onClick={() => setShowActivityModal(true)}>Show all activity</button>
+            </div>
+          )}
         </div>
       </div>
+
+      <PaginatedListModal
+        open={showCommitsModal}
+        onClose={() => setShowCommitsModal(false)}
+        title="All Commits"
+        fetchData={(skip, limit) => api.getAllCommits(skip, limit)}
+        renderItem={(c) => (
+          <div style={styles.activityItem}>
+            <span style={{ ...styles.actionBadge, color: "var(--success)" }}>COMMIT</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={styles.activityDetail}>
+                <span style={{ fontFamily: "monospace", color: "var(--accent-2)" }}>{c.program_name}</span> - {c.commit_message}
+              </div>
+              <div style={styles.activityMeta}>
+                {c.author} · {c.sandbox_name || "unknown server"} · {formatDateTime(c.created_at)}
+              </div>
+            </div>
+          </div>
+        )}
+      />
+
+      <PaginatedListModal
+        open={showActivityModal}
+        onClose={() => setShowActivityModal(false)}
+        title="All Activity"
+        fetchData={(skip, limit) => api.getActivity(skip, limit)}
+        renderItem={(a) => {
+          const displayAction = ACTION_MAPPING[a.action] || a.action;
+          return (
+            <div style={styles.activityItem}>
+              <span style={{ ...styles.actionBadge, color: ACTION_COLORS[displayAction] || "var(--text-secondary)" }}>{displayAction}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={styles.activityDetail}>{a.detail}</div>
+                <div style={styles.activityMeta}>
+                  {a.username} · {formatDateTime(a.created_at)}
+                </div>
+              </div>
+            </div>
+          );
+        }}
+      />
+
     </div>
   );
 }

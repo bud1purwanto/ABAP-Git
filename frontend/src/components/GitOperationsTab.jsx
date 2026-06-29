@@ -116,7 +116,7 @@ export default function GitOperationsTab({ author }) {
   }, [tcode, sandboxId, sapTCodes]);
 
   function refreshActivity() {
-    return api.getActivity(50, author).then(setActivity).catch(() => {});
+    return api.getActivity(0, 50, author).then(setActivity).catch(() => {});
   }
 
   function refreshPrograms(search) {

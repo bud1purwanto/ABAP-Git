@@ -8,11 +8,20 @@ function formatDateTime(dateStr) {
   }).format(new Date(dateStr));
 }
 
+const ACTION_MAPPING = {
+  PULL: "FETCH",
+  DEPLOY_LIVE: "DEPLOY",
+  PUSH: "ROLLBACK",
+  COMMIT: "COMMIT",
+  DELETE: "DELETE",
+};
+
 const ACTION_COLORS = {
-  PULL: "var(--accent-2)",
-  PUSH: "var(--danger)",
+  FETCH: "var(--accent-2)",
+  ROLLBACK: "var(--danger)",
   COMMIT: "var(--success)",
   DELETE: "var(--text-muted)",
+  DEPLOY: "#f43f5e",
 };
 
 function CollapsibleMessage({ message }) {
@@ -88,10 +97,12 @@ export default function ActivityFeed({ activity, history }) {
         <h3 style={styles.title}>Activity Log</h3>
         {activity.length === 0 && <div style={styles.empty}>No activity recorded yet.</div>}
         <div style={styles.activityList}>
-          {activity.map((a) => (
+          {activity.map((a) => {
+            const displayAction = ACTION_MAPPING[a.action] || a.action;
+            return (
             <div key={a.id} style={styles.activityItem}>
-              <span style={{ ...styles.actionBadge, color: ACTION_COLORS[a.action] || "var(--text-secondary)" }}>
-                {a.action}
+              <span style={{ ...styles.actionBadge, color: ACTION_COLORS[displayAction] || "var(--text-secondary)" }}>
+                {displayAction}
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={styles.activityDetail}>{a.detail}</div>
@@ -100,7 +111,8 @@ export default function ActivityFeed({ activity, history }) {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

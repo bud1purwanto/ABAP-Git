@@ -89,7 +89,8 @@ export const api = {
     return request(url);
   },
 
-  getActivity: (limit = 50, author) => request(`/api/activity?limit=${limit}${author ? `&author=${encodeURIComponent(author)}` : ""}`),
+  getActivity: (skip = 0, limit = 50, author) => request(`/api/activity?skip=${skip}&limit=${limit}${author ? `&author=${encodeURIComponent(author)}` : ""}`),
+  getAllCommits: (skip = 0, limit = 50, author) => request(`/api/git/commits?skip=${skip}&limit=${limit}${author ? `&author=${encodeURIComponent(author)}` : ""}`),
 
   listUsers: () => request("/api/users"),
   createUser: (data) => request("/api/users", { method: "POST", body: JSON.stringify(data) }),
