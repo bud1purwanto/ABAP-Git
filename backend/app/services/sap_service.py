@@ -192,6 +192,10 @@ _TRSTATUS_LABELS = {
 }
 
 
+def _build_rfc_options(query: str) -> list:
+    """Split a query string into 72-character chunks for RFC_READ_TABLE OPTIONS."""
+    return [{"TEXT": query[i:i+72]} for i in range(0, len(query), 72)]
+
 def get_object_transport_info(sandbox: Sandbox, program_name: str) -> dict:
     """Return {package, cr_number, cr_description, cr_status} for a program on a server.
 
@@ -208,9 +212,10 @@ def get_object_transport_info(sandbox: Sandbox, program_name: str) -> dict:
     try:
         # ── Package (TADIR) ──
         try:
+            query = f"PGMID = 'R3TR' AND OBJECT = 'PROG' AND OBJ_NAME = '{program_name}'"
             res = conn.call(
                 "RFC_READ_TABLE", QUERY_TABLE="TADIR", DELIMITER="|",
-                OPTIONS=[{"TEXT": f"PGMID = 'R3TR' AND OBJECT = 'PROG' AND OBJ_NAME = '{program_name}'"}],
+                OPTIONS=_build_rfc_options(query),
                 FIELDS=[{"FIELDNAME": "DEVCLASS"}], ROWCOUNT=1,
             )
             data = res.get("DATA", [])
@@ -221,9 +226,10 @@ def get_object_transport_info(sandbox: Sandbox, program_name: str) -> dict:
 
         # ── Transport requests containing the object (E071) ──
         try:
+            query = f"( PGMID = 'R3TR' AND OBJECT = 'PROG' OR PGMID = 'LIMU' AND OBJECT = 'REPS' ) AND OBJ_NAME = '{program_name}'"
             res = conn.call(
                 "RFC_READ_TABLE", QUERY_TABLE="E071", DELIMITER="|",
-                OPTIONS=[{"TEXT": f"PGMID = 'R3TR' AND OBJECT = 'PROG' AND OBJ_NAME = '{program_name}'"}],
+                OPTIONS=_build_rfc_options(query),
                 FIELDS=[{"FIELDNAME": "TRKORR"}], ROWCOUNT=100,
             )
             trs = sorted({r["WA"].split("|")[0].strip() for r in res.get("DATA", []) if r["WA"].strip()})
@@ -236,22 +242,36 @@ def get_object_transport_info(sandbox: Sandbox, program_name: str) -> dict:
             latest_status = None
             # Pick the most recent by E070 date/time, capturing its status
             try:
+                query = f"TRKORR IN ({in_clause})"
                 res = conn.call(
                     "RFC_READ_TABLE", QUERY_TABLE="E070", DELIMITER="|",
-                    OPTIONS=[{"TEXT": f"TRKORR IN ({in_clause})"}],
+                    OPTIONS=_build_rfc_options(query),
                     FIELDS=[{"FIELDNAME": "TRKORR"}, {"FIELDNAME": "AS4DATE"},
-                            {"FIELDNAME": "AS4TIME"}, {"FIELDNAME": "TRSTATUS"}],
+                            {"FIELDNAME": "AS4TIME"}, {"FIELDNAME": "TRSTATUS"},
+                            {"FIELDNAME": "STRKORR"}],
                     ROWCOUNT=100,
                 )
                 rows = []
                 for r in res.get("DATA", []):
                     parts = r["WA"].split("|")
-                    if len(parts) >= 4:
-                        rows.append((parts[0].strip(), parts[1].strip(), parts[2].strip(), parts[3].strip()))
+                    parts = [p.strip() for p in parts]
+                    while len(parts) < 5:
+                        parts.append("")
+                    rows.append(parts)
                 if rows:
-                    rows.sort(key=lambda x: (x[1], x[2]))
-                    latest = rows[-1][0]
-                    latest_status = rows[-1][3]
+                    # Filter out tasks (where STRKORR is not empty)
+                    parents = [r for r in rows if not r[4]]
+                    if not parents:
+                        parents = rows # fallback if only tasks exist
+                    
+                    # Prioritize Modifiable (Open) TRs, then sort by Date and Time
+                    def sort_key(row):
+                        is_open = 1 if row[3] in ("D", "L", "O") else 0
+                        return (is_open, row[1], row[2], row[0])
+                        
+                    parents.sort(key=sort_key)
+                    latest = parents[-1][0]
+                    latest_status = parents[-1][3]
             except Exception:
                 pass
             info["cr_number"] = latest
@@ -260,9 +280,10 @@ def get_object_transport_info(sandbox: Sandbox, program_name: str) -> dict:
 
             # Description (E07T, prefer English)
             try:
+                query = f"TRKORR = '{latest}'"
                 res = conn.call(
                     "RFC_READ_TABLE", QUERY_TABLE="E07T", DELIMITER="|",
-                    OPTIONS=[{"TEXT": f"TRKORR = '{latest}'"}],
+                    OPTIONS=_build_rfc_options(query),
                     FIELDS=[{"FIELDNAME": "AS4TEXT"}, {"FIELDNAME": "LANGU"}], ROWCOUNT=20,
                 )
                 descs = []

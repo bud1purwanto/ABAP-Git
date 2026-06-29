@@ -12,6 +12,39 @@ import { useDebounce } from "../hooks/useDebounce";
 
 const ENV_LABELS = { DEV: "Development", QA: "Quality Assurance", PROD: "Production" };
 
+const CR_STATUS_COLORS = {
+  Modifiable: { color: "#fcd34d", bg: "rgba(251, 191, 36, 0.12)", border: "rgba(251, 191, 36, 0.35)" },
+  Released: { color: "#6ee7b7", bg: "rgba(52, 211, 153, 0.14)", border: "rgba(52, 211, 153, 0.4)" },
+};
+
+function TransportBox({ info, environment }) {
+  const pkg = info?.package || "—";
+  const cr = info?.cr_number || "—";
+  const desc = info?.cr_description;
+  const isGit = pkg === "Git";
+  // CR status is only shown for the Development server, or if it's a Git commit version
+  const status = environment === "DEV" ? info?.cr_status : (isGit ? info?.cr_status : null);
+  const statusStyle = status
+    ? CR_STATUS_COLORS[status] || { color: "var(--accent-2)", bg: "rgba(34, 211, 238, 0.12)", border: "rgba(34, 211, 238, 0.3)" }
+    : null;
+  return (
+    <div style={styles.crBox}>
+      <div style={styles.crHeader}>
+        <span style={styles.crChip}>{isGit ? "🌲" : "📦"} {pkg}</span>
+        <span style={styles.crChip}>{isGit ? "📝" : "🚚"} {cr}</span>
+        {status && (
+          <span style={{ ...styles.crStatusChip, color: statusStyle.color, background: statusStyle.bg, border: `1px solid ${statusStyle.border}` }}>
+            ● {status}
+          </span>
+        )}
+      </div>
+      <div style={styles.crDesc}>
+        {desc || <em style={{ color: "var(--text-muted)" }}>{isGit ? "No commit message." : "No change request description."}</em>}
+      </div>
+    </div>
+  );
+}
+
 export default function SyncTab({ author }) {
   const [sandboxes, setSandboxes] = useState([]);
   const [sourceId, setSourceId] = useState("");
@@ -30,6 +63,8 @@ export default function SyncTab({ author }) {
   const [sandboxSource, setSandboxSource] = useState("");
   const [identical, setIdentical] = useState(false);
   const [hasCompared, setHasCompared] = useState(false);
+  const [sourceTransport, setSourceTransport] = useState(null);
+  const [sandboxTransport, setSandboxTransport] = useState(null);
 
   const [loadingAction, setLoadingAction] = useState("");
   const [confirmSync, setConfirmSync] = useState(false);
@@ -173,6 +208,8 @@ export default function SyncTab({ author }) {
       setSourceSource(res.source_code || "");
       setSandboxSource(res.sandbox_source || "");
       setIdentical(res.identical);
+      setSourceTransport(res.source_transport || null);
+      setSandboxTransport(res.sandbox_transport || null);
       setHasCompared(true);
       if (res.identical) {
         toast.info("Sandbox already matches the source — nothing to sync.");
@@ -341,18 +378,24 @@ export default function SyncTab({ author }) {
               )}
             </div>
             {hasCompared && !identical && (
-              <div style={styles.colTitles}>
-                <div style={styles.colTitle}>
-                  <span style={{ ...styles.legendDot, background: "#f43f5e" }} />
-                  <strong>{selectedSource?.name}</strong>
-                  <span style={styles.legendNote}>source of truth</span>
+              <>
+                <div style={styles.colTitles}>
+                  <div style={styles.colTitle}>
+                    <span style={{ ...styles.legendDot, background: "#f43f5e" }} />
+                    <strong>{selectedSource?.name}</strong>
+                    <span style={styles.legendNote}>source of truth</span>
+                  </div>
+                  <div style={styles.colTitle}>
+                    <span style={{ ...styles.legendDot, background: "var(--accent-2)" }} />
+                    <strong>{selectedTarget?.name}</strong>
+                    <span style={styles.legendNote}>target sandbox</span>
+                  </div>
                 </div>
-                <div style={styles.colTitle}>
-                  <span style={{ ...styles.legendDot, background: "var(--accent-2)" }} />
-                  <strong>{selectedTarget?.name}</strong>
-                  <span style={styles.legendNote}>will be overwritten</span>
+                <div style={styles.crBoxes}>
+                  <TransportBox info={sourceTransport} environment={selectedSource?.environment} />
+                  <TransportBox info={sandboxTransport} environment={selectedTarget?.environment} />
                 </div>
-              </div>
+              </>
             )}
           </div>
           <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
@@ -429,11 +472,29 @@ const styles = {
   diffHeaderCol: { display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 },
   diffTitleRow: { position: "relative", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 28 },
   diffTitleCentered: { margin: 0, fontSize: 14, fontWeight: 600, textAlign: "center" },
-  colTitles: { display: "flex", gap: 12 },
+  colTitles: { display: "flex", gap: 12, marginBottom: 12 },
   colTitle: { flex: 1, minWidth: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 12.5, color: "var(--text-primary)", flexWrap: "wrap" },
   legendDot: { width: 8, height: 8, borderRadius: "50%", flexShrink: 0 },
   legendNote: { color: "var(--text-muted)", fontWeight: 400, fontSize: 11.5 },
   fullscreenBtnAbs: { position: "absolute", right: 0, top: "50%", transform: "translateY(-50%)", padding: "5px 12px", fontSize: 12.5 },
+  crBoxes: { display: "flex", gap: 12, marginBottom: 12 },
+  crBox: {
+    flex: 1, minWidth: 0,
+    background: "rgba(99, 102, 241, 0.08)",
+    border: "1px solid var(--accent-glow)",
+    borderRadius: 10,
+    padding: "8px 12px",
+  },
+  crHeader: { display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 4 },
+  crChip: {
+    fontSize: 11.5, fontWeight: 700, color: "var(--accent-2)",
+    background: "rgba(34, 211, 238, 0.1)", border: "1px solid rgba(34, 211, 238, 0.25)",
+    borderRadius: 5, padding: "1px 8px", fontFamily: "monospace",
+  },
+  crStatusChip: {
+    fontSize: 11, fontWeight: 700, borderRadius: 5, padding: "1px 8px",
+  },
+  crDesc: { fontSize: 12.5, color: "var(--text-primary)", textAlign: "center", lineHeight: 1.4, wordBreak: "break-word" },
   placeholder: { color: "var(--text-muted)", fontStyle: "italic", padding: "24px 4px", fontSize: 13.5, lineHeight: 1.6 },
   identicalBox: {
     color: "var(--success)",

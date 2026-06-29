@@ -29,16 +29,17 @@ function TransportBox({ info, environment }) {
   const pkg = info?.package || "—";
   const cr = info?.cr_number || "—";
   const desc = info?.cr_description;
-  // CR status is only shown for the Development server.
-  const status = environment === "DEV" ? info?.cr_status : null;
+  const isGit = pkg === "Git";
+  // CR status is only shown for the Development server, or if it's a Git commit version
+  const status = environment === "DEV" ? info?.cr_status : (isGit ? info?.cr_status : null);
   const statusStyle = status
     ? CR_STATUS_COLORS[status] || { color: "var(--accent-2)", bg: "rgba(34, 211, 238, 0.12)", border: "rgba(34, 211, 238, 0.3)" }
     : null;
   return (
     <div style={styles.crBox}>
       <div style={styles.crHeader}>
-        <span style={styles.crChip}>📦 {pkg}</span>
-        <span style={styles.crChip}>🚚 {cr}</span>
+        <span style={styles.crChip}>{isGit ? "🌲" : "📦"} {pkg}</span>
+        <span style={styles.crChip}>{isGit ? "📝" : "🚚"} {cr}</span>
         {status && (
           <span style={{ ...styles.crStatusChip, color: statusStyle.color, background: statusStyle.bg, border: `1px solid ${statusStyle.border}` }}>
             ● {status}
@@ -46,7 +47,7 @@ function TransportBox({ info, environment }) {
         )}
       </div>
       <div style={styles.crDesc}>
-        {desc || <em style={{ color: "var(--text-muted)" }}>No change request description.</em>}
+        {desc || <em style={{ color: "var(--text-muted)" }}>{isGit ? "No commit message." : "No change request description."}</em>}
       </div>
     </div>
   );

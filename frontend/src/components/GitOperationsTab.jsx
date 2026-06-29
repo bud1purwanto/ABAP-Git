@@ -580,6 +580,8 @@ export default function GitOperationsTab({ author }) {
         sandboxId={sandboxId}
         history={history}
         author={author}
+        initialLeft={showCompareModal ? "SAP" : undefined}
+        initialRight={showCompareModal && selectedVersionId ? String(selectedVersionId) : undefined}
       />
       <DeployLiveModal
         open={showDeployLiveModal}

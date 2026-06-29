@@ -224,6 +224,10 @@ def sync_compare(payload: SyncCompareRequest, db: Session = Depends(get_db)):
     except Exception:
         sandbox_source = ""
 
+    # Get transport info
+    source_transport = _get_server_transport_info(source, payload.program_name, db)
+    sandbox_transport = _get_server_transport_info(target, payload.program_name, db)
+
     return {
         "program_name": payload.program_name,
         "source_code": source_source,
@@ -232,6 +236,8 @@ def sync_compare(payload: SyncCompareRequest, db: Session = Depends(get_db)):
         "source_name": source.name,
         "source_environment": source.environment,
         "sandbox_name": target.name,
+        "source_transport": source_transport,
+        "sandbox_transport": sandbox_transport,
     }
 
 
@@ -283,6 +289,25 @@ class CompareServersRequest(BaseModel):
     program_name: str
 
 
+def _get_server_transport_info(server: Sandbox, program_name: str, db: Session):
+    if server.environment == "SANDBOX":
+        # For Sandbox, check if there are Git commits
+        latest = db.query(ProgramVersion).filter(
+            ProgramVersion.program_name == program_name
+        ).order_by(ProgramVersion.created_at.desc()).first()
+        
+        if latest:
+            return {
+                "package": "Git",
+                "cr_number": "Latest Commit",
+                "cr_description": latest.commit_message,
+                "cr_status": f"v{latest.version_number}"
+            }
+        return {"package": None, "cr_number": None, "cr_description": None, "cr_status": None}
+    
+    return sap_service.get_object_transport_info(server, program_name)
+
+
 @router.post("/compare")
 def compare_servers(payload: CompareServersRequest, db: Session = Depends(get_db)):
     """Read-only comparison of a program between two servers. The right server must be
@@ -298,7 +323,7 @@ def compare_servers(payload: CompareServersRequest, db: Session = Depends(get_db
     if ENV_RANK.get(right.environment, 0) >= ENV_RANK.get(left.environment, 0):
         raise HTTPException(
             status_code=400,
-            detail="The right server must be lower in the hierarchy than the left server.",
+            detail="Right server must be strictly lower in the promotion path than left server.",
         )
 
     # Tolerate a program missing on either side — show it as empty so the diff still renders.
@@ -306,20 +331,14 @@ def compare_servers(payload: CompareServersRequest, db: Session = Depends(get_db
         left_source = sap_service.read_program(left, payload.program_name)
     except Exception:
         left_source = ""
+
     try:
         right_source = sap_service.read_program(right, payload.program_name)
     except Exception:
         right_source = ""
 
-    empty_tr = {"package": None, "cr_number": None, "cr_description": None}
-    try:
-        left_transport = sap_service.get_object_transport_info(left, payload.program_name)
-    except Exception:
-        left_transport = dict(empty_tr)
-    try:
-        right_transport = sap_service.get_object_transport_info(right, payload.program_name)
-    except Exception:
-        right_transport = dict(empty_tr)
+    left_transport = _get_server_transport_info(left, payload.program_name, db)
+    right_transport = _get_server_transport_info(right, payload.program_name, db)
 
     return {
         "program_name": payload.program_name,

@@ -26,12 +26,14 @@ export default function CompareModal({
   const toast = useToast();
 
   useEffect(() => {
-    // Reset state when program name changes
-    setLeftSource("");
-    setRightSource("");
-    setLeftCode("");
-    setRightCode("");
-  }, [programName]);
+    // Reset state when program name changes or modal closes
+    if (!open) {
+      setLeftSource("");
+      setRightSource("");
+      setLeftCode("");
+      setRightCode("");
+    }
+  }, [programName, open]);
 
   useEffect(() => {
     if (open && !leftSource && !rightSource) {
