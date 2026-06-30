@@ -39,7 +39,10 @@ def read_from_sap(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to read program from SAP: {exc}") from exc
 
-    query = db.query(ProgramVersion).filter(ProgramVersion.program_name == program_name)
+    query = db.query(ProgramVersion).filter(
+        ProgramVersion.program_name == program_name,
+        ProgramVersion.sandbox_name == sandbox.name
+    )
     if version_id is not None:
         version = query.filter(ProgramVersion.id == version_id).first()
     else:
@@ -293,7 +296,8 @@ def _get_server_transport_info(server: Sandbox, program_name: str, db: Session):
     if server.environment == "SANDBOX":
         # For Sandbox, check if there are Git commits
         latest = db.query(ProgramVersion).filter(
-            ProgramVersion.program_name == program_name
+            ProgramVersion.program_name == program_name,
+            ProgramVersion.sandbox_name == server.name
         ).order_by(ProgramVersion.created_at.desc()).first()
         
         if latest:

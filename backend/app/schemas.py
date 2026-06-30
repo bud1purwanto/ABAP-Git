@@ -125,6 +125,7 @@ class RenameProgramRequest(BaseModel):
     requested_by: str
     old_name: str
     new_name: str
+    sandbox_name: Optional[str] = None
 
 
 class ProgramVersionOut(BaseModel):

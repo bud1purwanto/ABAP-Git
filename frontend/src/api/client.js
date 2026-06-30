@@ -68,7 +68,12 @@ export const api = {
     }),
 
   commitVersion: (data) => request("/api/git/commit", { method: "POST", body: JSON.stringify(data) }),
-  getHistory: (programName, author) => request(`/api/git/history?program_name=${encodeURIComponent(programName)}${author ? `&author=${encodeURIComponent(author)}` : ""}`),
+  getHistory: (programName, author, sandboxName) => {
+    const params = new URLSearchParams({ program_name: programName });
+    if (author) params.append("author", author);
+    if (sandboxName) params.append("sandbox_name", sandboxName);
+    return request(`/api/git/history?${params.toString()}`);
+  },
   getVersion: (versionId) => request(`/api/git/version/${versionId}`),
   editCommit: (versionId, requestedBy, commitMessage) =>
     request(`/api/git/version/${versionId}`, {
@@ -77,20 +82,26 @@ export const api = {
     }),
   deleteCommit: (versionId, requestedBy) =>
     request(`/api/git/version/${versionId}?requested_by=${encodeURIComponent(requestedBy)}`, { method: "DELETE" }),
-  renameProgram: (oldName, newName, requestedBy) =>
+  renameProgram: (oldName, newName, requestedBy, sandboxName) =>
     request("/api/git/rename-program", {
       method: "POST",
-      body: JSON.stringify({ old_name: oldName, new_name: newName, requested_by: requestedBy }),
+      body: JSON.stringify({ old_name: oldName, new_name: newName, requested_by: requestedBy, sandbox_name: sandboxName }),
     }),
-  listPrograms: (search, author) => {
-    let url = `/api/git/programs?`;
-    if (search) url += `search=${encodeURIComponent(search)}&`;
-    if (author) url += `author=${encodeURIComponent(author)}`;
-    return request(url);
+  listPrograms: (search, author, sandboxName) => {
+    const params = new URLSearchParams();
+    if (search) params.append("search", search);
+    if (author) params.append("author", author);
+    if (sandboxName) params.append("sandbox_name", sandboxName);
+    return request(`/api/git/programs?${params.toString()}`);
   },
 
   getActivity: (skip = 0, limit = 50, author) => request(`/api/activity?skip=${skip}&limit=${limit}${author ? `&author=${encodeURIComponent(author)}` : ""}`),
-  getAllCommits: (skip = 0, limit = 50, author) => request(`/api/git/commits?skip=${skip}&limit=${limit}${author ? `&author=${encodeURIComponent(author)}` : ""}`),
+  getAllCommits: (skip = 0, limit = 50, author, sandboxName) => {
+    const params = new URLSearchParams({ skip, limit });
+    if (author) params.append("author", author);
+    if (sandboxName) params.append("sandbox_name", sandboxName);
+    return request(`/api/git/commits?${params.toString()}`);
+  },
 
   listUsers: () => request("/api/users"),
   createUser: (data) => request("/api/users", { method: "POST", body: JSON.stringify(data) }),

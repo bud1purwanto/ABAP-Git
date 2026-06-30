@@ -31,6 +31,7 @@ def commit_version(payload: CommitRequest, db: Session = Depends(get_db)):
     latest_version = (
         db.query(ProgramVersion)
         .filter(ProgramVersion.program_name == payload.program_name)
+        .filter(ProgramVersion.sandbox_name == payload.sandbox_name)
         .order_by(ProgramVersion.created_at.desc())
         .first()
     )
@@ -166,10 +167,10 @@ def delete_commit(version_id: int, requested_by: str = Query(...), db: Session =
 
 @router.post("/rename-program", status_code=200)
 def rename_program(payload: RenameProgramRequest, db: Session = Depends(get_db)):
-    """Rename a program across its entire version history.
+    """Rename a program across its entire version history within a sandbox (or globally if no sandbox).
 
     Rules:
-      - The new name must not already be used by another program.
+      - The new name must not already be used by another program in that sandbox.
       - The requester must be a super admin, OR must have authored at least one
         commit of the program being renamed.
     """
@@ -181,20 +182,19 @@ def rename_program(payload: RenameProgramRequest, db: Session = Depends(get_db))
     if old_name == new_name:
         raise HTTPException(status_code=400, detail="New name must differ from the current name.")
 
-    existing = (
-        db.query(ProgramVersion)
-        .filter(ProgramVersion.program_name == old_name)
-        .first()
-    )
+    existing_query = db.query(ProgramVersion).filter(ProgramVersion.program_name == old_name)
+    if payload.sandbox_name:
+        existing_query = existing_query.filter(ProgramVersion.sandbox_name == payload.sandbox_name)
+    existing = existing_query.first()
+    
     if not existing:
-        raise HTTPException(status_code=404, detail=f"Program '{old_name}' has no version history.")
+        raise HTTPException(status_code=404, detail=f"Program '{old_name}' has no version history in this sandbox.")
 
     # Block if a program with the new name already exists (case-insensitive).
-    clash = (
-        db.query(ProgramVersion)
-        .filter(func.lower(ProgramVersion.program_name) == new_name.lower())
-        .first()
-    )
+    clash_query = db.query(ProgramVersion).filter(func.lower(ProgramVersion.program_name) == new_name.lower())
+    if payload.sandbox_name:
+        clash_query = clash_query.filter(ProgramVersion.sandbox_name == payload.sandbox_name)
+    clash = clash_query.first()
     if clash:
         raise HTTPException(
             status_code=409,
@@ -203,28 +203,29 @@ def rename_program(payload: RenameProgramRequest, db: Session = Depends(get_db))
 
     is_admin = _is_super_admin(db, payload.requested_by)
     if not is_admin:
-        has_commit = (
-            db.query(ProgramVersion)
-            .filter(
-                ProgramVersion.program_name == old_name,
-                ProgramVersion.author == payload.requested_by,
-            )
-            .first()
+        has_commit_query = db.query(ProgramVersion).filter(
+            ProgramVersion.program_name == old_name,
+            ProgramVersion.author == payload.requested_by,
         )
-        if not has_commit:
+        if payload.sandbox_name:
+            has_commit_query = has_commit_query.filter(ProgramVersion.sandbox_name == payload.sandbox_name)
+        
+        if not has_commit_query.first():
             raise HTTPException(
                 status_code=403,
                 detail="You can only rename programs you have committed to.",
             )
 
-    updated = (
-        db.query(ProgramVersion)
-        .filter(ProgramVersion.program_name == old_name)
-        .update({ProgramVersion.program_name: new_name}, synchronize_session=False)
-    )
-    db.query(ActivityLog).filter(ActivityLog.program_name == old_name).update(
-        {ActivityLog.program_name: new_name}, synchronize_session=False
-    )
+    update_query = db.query(ProgramVersion).filter(ProgramVersion.program_name == old_name)
+    if payload.sandbox_name:
+        update_query = update_query.filter(ProgramVersion.sandbox_name == payload.sandbox_name)
+    
+    updated = update_query.update({ProgramVersion.program_name: new_name}, synchronize_session=False)
+    
+    log_update_query = db.query(ActivityLog).filter(ActivityLog.program_name == old_name)
+    if payload.sandbox_name:
+        log_update_query = log_update_query.filter(ActivityLog.sandbox_name == payload.sandbox_name)
+    log_update_query.update({ActivityLog.program_name: new_name}, synchronize_session=False)
 
     db.add(ActivityLog(
         action="RENAME",
@@ -237,26 +238,34 @@ def rename_program(payload: RenameProgramRequest, db: Session = Depends(get_db))
     return {"status": "ok", "old_name": old_name, "new_name": new_name, "versions_updated": updated}
 
 @router.get("/history", response_model=list[ProgramVersionOut])
-def get_history(program_name: str = Query(...), author: str | None = Query(default=None), db: Session = Depends(get_db)):
+def get_history(program_name: str = Query(...), sandbox_name: str | None = Query(default=None), author: str | None = Query(default=None), db: Session = Depends(get_db)):
     query = db.query(ProgramVersion).filter(ProgramVersion.program_name == program_name)
+    if sandbox_name:
+        query = query.filter(ProgramVersion.sandbox_name == sandbox_name)
     if author:
         query = query.filter(ProgramVersion.author == author)
     return query.order_by(ProgramVersion.created_at.desc()).all()
 
 
 @router.get("/commits", response_model=list[ProgramVersionOut])
-def get_all_commits(skip: int = 0, limit: int = 50, author: str | None = Query(default=None), db: Session = Depends(get_db)):
+def get_all_commits(skip: int = 0, limit: int = 50, sandbox_name: str | None = Query(default=None), author: str | None = Query(default=None), db: Session = Depends(get_db)):
     query = db.query(ProgramVersion)
+    if sandbox_name:
+        query = query.filter(ProgramVersion.sandbox_name == sandbox_name)
     if author:
         query = query.filter(ProgramVersion.author == author)
     return query.order_by(ProgramVersion.created_at.desc()).offset(skip).limit(limit).all()
 
 
 @router.get("/programs", response_model=list[ProgramSummary])
-def list_programs(search: str | None = Query(default=None), author: str | None = Query(default=None), db: Session = Depends(get_db)):
-    """Distinct programs ever committed, each with its most recent version info."""
+def list_programs(search: str | None = Query(default=None), sandbox_name: str | None = Query(default=None), author: str | None = Query(default=None), db: Session = Depends(get_db)):
+    """Distinct programs ever committed (filtered by sandbox if provided), each with its most recent version info."""
+    base_query = db.query(ProgramVersion)
+    if sandbox_name:
+        base_query = base_query.filter(ProgramVersion.sandbox_name == sandbox_name)
+
     latest_per_program = (
-        db.query(
+        base_query.with_entities(
             ProgramVersion.program_name,
             func.max(ProgramVersion.created_at).label("max_created_at"),
             func.count(ProgramVersion.id).label("version_count"),
@@ -276,6 +285,9 @@ def list_programs(search: str | None = Query(default=None), author: str | None =
         (ProgramVersion.program_name == latest_per_program.c.program_name)
         & (ProgramVersion.created_at == latest_per_program.c.max_created_at),
     )
+    
+    if sandbox_name:
+        query = query.filter(ProgramVersion.sandbox_name == sandbox_name)
 
     if search:
         query = query.filter(ProgramVersion.program_name.ilike(f"%{search}%"))

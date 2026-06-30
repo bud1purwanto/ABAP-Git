@@ -97,9 +97,11 @@ export default function GitOperationsTab({ author }) {
       api.getTCodes(sandboxId).catch(() => ({ data: [] })),
       api.getPrograms(sandboxId).catch(() => ({ data: [] })),
     ]).then(([tcodesRes, programsRes]) => {
-      setSapTCodes(tcodesRes.data || []);
       setSapPrograms(programsRes.data ? programsRes.data.map((p) => p.name) : []);
     }).finally(() => setIsLoadingSapMeta(false));
+    
+    // Also refresh Git programs to show those scoped to this sandbox
+    refreshPrograms(programSearch);
   }, [sandboxId]);
 
   // Fetch includes when tcode changes
@@ -121,7 +123,7 @@ export default function GitOperationsTab({ author }) {
   }
 
   function refreshPrograms(search) {
-    return api.listPrograms(search, author).then(setPrograms).catch(() => {});
+    return api.listPrograms(search, author, selectedSandbox?.name || "").then(setPrograms).catch(() => {});
   }
 
   async function loadHistory(name) {
@@ -132,7 +134,7 @@ export default function GitOperationsTab({ author }) {
       return [];
     }
     try {
-      const h = await api.getHistory(name);
+      const h = await api.getHistory(name, undefined, selectedSandbox?.name || "");
       setHistory(h);
       if (h.length > 0) {
         setSelectedVersionId(h[0].id);

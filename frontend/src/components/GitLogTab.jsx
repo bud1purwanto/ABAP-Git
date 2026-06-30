@@ -96,7 +96,9 @@ export default function GitLogTab({ currentUser }) {
     }
   }, [tcode, sandboxId, sapTCodes]);
 
-  // Load commit history whenever the program changes
+  const selectedSandbox = safeSandboxes.find((s) => String(s.id) === String(sandboxId));
+
+  // Load commit history whenever the program or sandbox changes
   useEffect(() => {
     if (!programName) {
       setHistory([]);
@@ -105,7 +107,7 @@ export default function GitLogTab({ currentUser }) {
     let active = true;
     setLoadingHistory(true);
     api
-      .getHistory(programName)
+      .getHistory(programName, undefined, selectedSandbox?.name || "")
       .then((h) => {
         if (active) setHistory(h);
       })
@@ -118,11 +120,12 @@ export default function GitLogTab({ currentUser }) {
     return () => {
       active = false;
     };
-  }, [programName]);
+  }, [programName, sandboxId]);
 
   function reloadHistory() {
     if (!programName) return;
-    api.getHistory(programName).then(setHistory).catch(() => {});
+    const selectedSandbox = safeSandboxes.find((s) => String(s.id) === String(sandboxId));
+    api.getHistory(programName, undefined, selectedSandbox?.name || "").then(setHistory).catch(() => {});
   }
 
   function handleTCodeChange(val) {
@@ -161,7 +164,8 @@ export default function GitLogTab({ currentUser }) {
     }
     setRenameBusy(true);
     try {
-      await api.renameProgram(programName, newName, username);
+      const selectedSandbox = safeSandboxes.find((s) => String(s.id) === String(sandboxId));
+      await api.renameProgram(programName, newName, username, selectedSandbox?.name || "");
       toast.success(`Program renamed to ${newName}.`);
       setShowRenameModal(false);
       setProgramName(newName);

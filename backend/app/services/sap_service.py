@@ -62,8 +62,16 @@ def check_syntax(sandbox: Sandbox, program_name: str, source_code: str) -> dict:
 
 
 def write_program(sandbox: Sandbox, program_name: str, source_code: str) -> None:
-    """Install ABAP source code back into SAP via RFC_ABAP_INSTALL_AND_RUN (MODE='I')."""
-    
+    """Install ABAP source code back into SAP.
+
+    Strategy:
+      1. Syntax-check first (always).
+      2. Try the custom FM ``Z_RFC_PROGRAM_UPDATE`` (preferred, cleaner).
+      3. If the FM is not found (``FU_NOT_FOUND``), fall back to the
+         standard ``RFC_ABAP_INSTALL_AND_RUN`` which dynamically executes
+         an ``INSERT REPORT`` statement — available on every SAP system.
+    """
+
     # 1. Syntax check before writing
     syntax = check_syntax(sandbox, program_name, source_code)
     if not syntax.get("valid"):
@@ -72,28 +80,85 @@ def write_program(sandbox: Sandbox, program_name: str, source_code: str) -> None
 
     conn = _connect(sandbox)
     try:
-        # 3. Write program using Custom RFC
         program_lines = [{"LINE": line} for line in source_code.split("\n")]
+
+        # --- Attempt 1: Custom FM ---
         try:
             res = conn.call(
                 "Z_RFC_PROGRAM_UPDATE",
                 IV_PROGRAM_NAME=program_name,
                 IV_PACKAGE="$TMP",
-                IT_SOURCE=program_lines
+                IT_SOURCE=program_lines,
             )
+            if res and res.get("EV_SUCCESS") != "X" and res.get("EV_MESSAGE"):
+                raise ValueError(f"SAP Write Error: {res.get('EV_MESSAGE')}")
+            return  # success
         except Exception as e:
             err_str = str(e)
-            if "CALL_FUNCTION_PARM_UNKNOWN" in err_str:
-                raise ValueError(
-                    f"Terdapat bug (typo) di dalam ABAP Function Module Z_RFC_PROGRAM_UPDATE di SAP Anda: {err_str}. "
-                    "Sepertinya ada pemanggilan parameter 'CORR_NUMBER' yang salah nama."
-                ) from e
-            raise ValueError(f"Gagal memanggil Z_RFC_PROGRAM_UPDATE: {e}") from e
+            if "FU_NOT_FOUND" not in err_str:
+                # Not a "missing FM" error — re-raise as-is
+                if "CALL_FUNCTION_PARM_UNKNOWN" in err_str:
+                    raise ValueError(
+                        f"Bug in Z_RFC_PROGRAM_UPDATE on SAP: {err_str}. "
+                        "Check parameter names in the FM definition."
+                    ) from e
+                raise ValueError(f"Z_RFC_PROGRAM_UPDATE failed: {e}") from e
+            # FM not found → fall through to standard approach
 
-        if res and res.get("EV_SUCCESS") != "X" and res.get("EV_MESSAGE"):
-            raise ValueError(f"SAP Write Error: {res.get('EV_MESSAGE')}")
+        # --- Attempt 2: Standard RFC_ABAP_INSTALL_AND_RUN (INSERT REPORT) ---
+        _write_via_insert_report(conn, program_name, source_code)
     finally:
         conn.close()
+
+
+def _write_via_insert_report(conn, program_name: str, source_code: str) -> None:
+    """Write ABAP source using RFC_ABAP_INSTALL_AND_RUN + INSERT REPORT.
+
+    This builds a tiny dynamic ABAP program that:
+      1. Fills an internal table with the source lines.
+      2. Calls INSERT REPORT to overwrite the target program.
+
+    Available on every SAP system — no custom FM needed.
+    """
+    lines = source_code.split("\n")
+
+    # Build the dynamic ABAP code
+    abap_lines = [
+        f"REPORT ZINSTALL_TEMP.",
+        f"DATA: lt_source TYPE TABLE OF abapsource,",
+        f"      ls_source TYPE abapsource.",
+    ]
+
+    for line in lines:
+        # Escape single quotes for ABAP string literals
+        escaped = line.replace("'", "''")
+        abap_lines.append(f"ls_source-line = '{escaped}'.")
+        abap_lines.append("APPEND ls_source TO lt_source.")
+
+    abap_lines.append(f"INSERT REPORT '{program_name}' FROM lt_source.")
+    abap_lines.append("IF sy-subrc <> 0.")
+    abap_lines.append("  WRITE: / 'ERROR:', sy-subrc.")
+    abap_lines.append("ELSE.")
+    abap_lines.append("  WRITE: / 'SUCCESS'.")
+    abap_lines.append("ENDIF.")
+
+    program_table = [{"LINE": l} for l in abap_lines]
+
+    try:
+        result = conn.call("RFC_ABAP_INSTALL_AND_RUN", PROGRAM=program_table)
+    except Exception as exc:
+        raise ValueError(f"RFC_ABAP_INSTALL_AND_RUN failed: {exc}") from exc
+
+    # Check the WRITES output for errors
+    output_lines = result.get("WRITES", [])
+    output_text = " ".join(
+        str(row.get("ZEESSION") or row.get("LINE") or row.get("ZEESSION", ""))
+        for row in output_lines
+    ).strip()
+
+    if "ERROR" in output_text.upper():
+        raise ValueError(f"SAP INSERT REPORT failed: {output_text}")
+
 
 def get_tcodes(sandbox: Sandbox) -> list[dict]:
     """Fetch Z* T-codes and their associated programs from TSTC."""

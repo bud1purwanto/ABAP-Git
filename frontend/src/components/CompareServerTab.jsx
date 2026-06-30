@@ -100,8 +100,9 @@ export default function CompareServerTab() {
 
   const serversOk = (leftVal.passed !== false) && (rightVal.passed !== false);
 
-  // Left can be any server. Order by hierarchy: Sandbox, DEV, QA, PROD (then name).
+  // Left can be any server except the lowest rank (since right must be lower).
   const leftOptions = [...safeSandboxes]
+    .filter((sb) => safeSandboxes.some((other) => rank(other) < rank(sb)))
     .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))
     .map((sb) => ({ label: serverLabel(sb), value: String(sb.id) }));
 
