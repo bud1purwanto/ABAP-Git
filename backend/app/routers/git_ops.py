@@ -1,4 +1,5 @@
 import hashlib
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy import func
@@ -42,6 +43,30 @@ def commit_version(payload: CommitRequest, db: Session = Depends(get_db)):
             )
 
     version_hash = hashlib.sha256(payload.source_code.encode("utf-8")).hexdigest()[:12]
+    
+    if getattr(payload, "amend", False):
+        if not latest_version:
+            raise HTTPException(status_code=400, detail="Cannot amend because there is no previous commit.")
+        if latest_version.author != payload.author and not _is_super_admin(db, payload.author):
+            raise HTTPException(status_code=403, detail="You can only amend if you are the author of the most recent commit.")
+        
+        latest_version.source_code = payload.source_code
+        latest_version.commit_message = payload.commit_message
+        latest_version.version_hash = version_hash
+        latest_version.sandbox_name = payload.sandbox_name
+        latest_version.created_at = datetime.utcnow()
+        
+        db.add(ActivityLog(
+            action="COMMIT",
+            username=payload.author or "system",
+            program_name=payload.program_name,
+            sandbox_name=payload.sandbox_name,
+            detail=f"Amended commit {payload.program_name} ({version_hash})",
+        ))
+        db.commit()
+        db.refresh(latest_version)
+        return latest_version
+
     new_version_number = (latest_version.version_number + 1) if latest_version else 1
 
     version = ProgramVersion(

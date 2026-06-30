@@ -45,6 +45,7 @@ export default function GitOperationsTab({ author }) {
   const [showCommitModal, setShowCommitModal] = useState(false);
   const [showCompareModal, setShowCompareModal] = useState(false);
   const [showDeployLiveModal, setShowDeployLiveModal] = useState(false);
+  const [amendCommit, setAmendCommit] = useState(false);
   const toast = useToast();
 
   const safeSandboxes = sandboxes || [];
@@ -228,7 +229,8 @@ export default function GitOperationsTab({ author }) {
     }
     setLoadingAction("ai");
     try {
-      const res = await api.generateCommit(diff, programName);
+      const prevMsg = amendCommit && history.length > 0 ? history[0].commit_message : null;
+      const res = await api.generateCommit(diff, programName, prevMsg);
       setCommitMessage(res.commit_message);
     } catch (err) {
       toast.error(err.message);
@@ -239,6 +241,7 @@ export default function GitOperationsTab({ author }) {
 
   function openCommitModal() {
     setShowCommitModal(true);
+    setAmendCommit(false); // Reset amend state when opening modal
   }
 
   async function handleCommit() {
@@ -256,8 +259,9 @@ export default function GitOperationsTab({ author }) {
         author,
         sandbox_name: sandboxName,
         parent_version_hash: parentVersionHash,
+        amend: amendCommit,
       });
-      toast.success("Committed successfully to ABAP_GIT (Postgres).");
+      toast.success(amendCommit ? "Amended commit successfully." : "Committed successfully to ABAP_GIT (Postgres).");
       setShowCommitModal(false);
       setCommitMessage("");
       await loadHistory(programName);
@@ -536,7 +540,49 @@ export default function GitOperationsTab({ author }) {
       {showCommitModal && (
         <div style={styles.modalOverlay} onClick={() => setShowCommitModal(false)}>
           <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700 }}>Commit Message</h3>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Commit Message</h3>
+              <label 
+                htmlFor="amendCheck" 
+                style={{ 
+                  display: "flex", 
+                  alignItems: "center", 
+                  gap: 8, 
+                  fontSize: 13, 
+                  cursor: "pointer",
+                  color: amendCommit ? "#fbbf24" : "var(--text-secondary)", 
+                  fontWeight: 600,
+                  background: amendCommit ? "rgba(251, 191, 36, 0.15)" : "rgba(255, 255, 255, 0.05)",
+                  padding: "6px 12px",
+                  borderRadius: 20,
+                  border: amendCommit ? "1px solid rgba(251, 191, 36, 0.4)" : "1px solid var(--panel-border)",
+                  userSelect: "none",
+                  whiteSpace: "nowrap",
+                  boxSizing: "border-box",
+                  textTransform: "capitalize"
+                }}
+              >
+                <input 
+                  type="checkbox" 
+                  id="amendCheck" 
+                  checked={amendCommit}
+                  onChange={(e) => setAmendCommit(e.target.checked)}
+                  style={{ 
+                    cursor: "pointer", 
+                    margin: 0, 
+                    padding: 0,
+                    width: "14px",
+                    height: "14px",
+                    accentColor: "#fbbf24",
+                    boxShadow: "none",
+                    border: "none",
+                    outline: "none"
+                  }}
+                />
+                Amend Last Commit
+              </label>
+            </div>
+            
             <textarea
               value={commitMessage}
               onChange={(e) => setCommitMessage(e.target.value)}

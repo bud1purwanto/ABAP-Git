@@ -9,7 +9,11 @@ router = APIRouter(prefix="/api/ai", tags=["ai"])
 @router.post("/generate-commit", response_model=GenerateCommitResponse)
 def generate_commit(payload: GenerateCommitRequest):
     try:
-        message = ai_service.generate_commit_message(payload.diff, payload.program_name)
+        message = ai_service.generate_commit_message(
+            payload.diff,
+            payload.program_name,
+            payload.previous_commit_message
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"AI generation failed: {exc}") from exc
     return GenerateCommitResponse(commit_message=message)

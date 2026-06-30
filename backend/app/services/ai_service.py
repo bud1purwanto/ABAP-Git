@@ -1,7 +1,7 @@
 from app.config import settings
 
 PROMPT_TEMPLATE = """Task: Analyze the unified diff of the SAP ABAP program{program_part} and generate a professional Git commit message.
-
+{amend_part}
 FORMAT REQUIREMENTS (Strictly follow this exact structure):
 [Short title summarizing the main change (max 50 chars)]
 
@@ -29,9 +29,12 @@ def _clean_response(text: str) -> str:
     return text.strip()
 
 
-def _build_prompt(diff: str, program_name: str | None) -> str:
+def _build_prompt(diff: str, program_name: str | None, previous_commit_message: str | None = None) -> str:
     program_part = f" '{program_name}'" if program_name else ""
-    return PROMPT_TEMPLATE.format(program_part=program_part, diff=diff)
+    amend_part = ""
+    if previous_commit_message:
+        amend_part = f"\nSPECIAL INSTRUCTION: The user is amending/squashing a previous commit. The PREVIOUS commit message was:\n\"\"\"{previous_commit_message}\"\"\"\nPlease incorporate the previous context with the new changes in the diff to generate ONE single, comprehensive commit message.\n"
+    return PROMPT_TEMPLATE.format(program_part=program_part, amend_part=amend_part, diff=diff)
 
 
 def _generate_with_gemini(prompt: str) -> str:
@@ -66,6 +69,8 @@ def _generate_with_openrouter(prompt: str) -> str:
         headers={
             "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
             "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/bud1purwanto/ABAP-Git",
+            "X-Title": "ABAP Git and Versioning",
         },
         json={
             "model": settings.OPENROUTER_MODEL,
@@ -79,11 +84,11 @@ def _generate_with_openrouter(prompt: str) -> str:
     return _clean_response(data["choices"][0]["message"]["content"])
 
 
-def generate_commit_message(diff: str, program_name: str | None = None) -> str:
+def generate_commit_message(diff: str, program_name: str | None = None, previous_commit_message: str | None = None) -> str:
     if not diff.strip():
         return "No changes detected."
 
-    prompt = _build_prompt(diff, program_name)
+    prompt = _build_prompt(diff, program_name, previous_commit_message)
 
     if settings.AI_PROVIDER == "anthropic":
         return _generate_with_anthropic(prompt)

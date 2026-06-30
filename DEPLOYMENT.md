@@ -7,7 +7,7 @@ Panduan ini berisi langkah-langkah lengkap untuk menginstal dan menjalankan apli
 ## 1. Persiapan Server & Dependensi (Instalasi Awal)
 
 Server Linux Anda harus memiliki dependensi berikut:
-- **Python 3.8 - 3.12** (Untuk Backend FastAPI)
+- **Python 3.12** (Sangat direkomendasikan untuk Backend FastAPI)
 - **Node.js 18+ & npm** (Untuk Frontend Vite/React)
 - **Git**
 - **Compiler C++** (Untuk build `pyrfc` secara manual)
@@ -16,7 +16,7 @@ Server Linux Anda harus memiliki dependensi berikut:
 Jalankan perintah berikut di terminal Linux Anda:
 ```bash
 sudo apt update
-sudo apt install build-essential python3-dev git curl unzip
+sudo apt install build-essential python3.12-dev python3.12-venv git curl unzip wget
 ```
 
 ### Install Node.js (via NodeSource)
@@ -37,27 +37,22 @@ Aplikasi ini wajib membutuhkan **SAP NetWeaver RFC SDK** agar library `pyrfc` pa
    sudo mkdir -p /usr/local/sap
    sudo unzip nwrfc750X_X-xxxxxxx.zip -d /usr/local/sap
    ```
-3. Beritahu OS Linux letak *library* C++ milik SAP SDK agar bisa dibaca:
+3. Beritahu OS Linux letak *library* C++ milik SAP SDK agar bisa dibaca secara global:
    ```bash
    echo "/usr/local/sap/nwrfcsdk/lib" | sudo tee /etc/ld.so.conf.d/nwrfcsdk.conf
    sudo ldconfig
-   ```
-4. Tambahkan *Environment Variable* (Sangat disarankan). Tambahkan baris ini ke `~/.bashrc`:
-   ```bash
-   echo "export SAPNWRFC_HOME=/usr/local/sap/nwrfcsdk" >> ~/.bashrc
-   source ~/.bashrc
    ```
 
 ---
 
 ## 3. Kloning Proyek (Pertama Kali)
 
-Pilih lokasi tempat aplikasi akan di-hosting (misal di Home Directory `~/` pengguna Anda):
+Pilih lokasi tempat aplikasi akan di-hosting (misal di `/var/www/`):
 
 ```bash
-# Buat folder
-mkdir -p ~/abap-git
-cd ~/abap-git
+sudo mkdir -p /var/www/ABAP-Git
+sudo chown -R $USER:$USER /var/www/ABAP-Git
+cd /var/www/ABAP-Git
 
 # Clone repositori dari GitHub (ganti dengan URL repo GitHub Anda)
 git clone <URL_GITHUB_ANDA> .
@@ -70,10 +65,10 @@ git clone <URL_GITHUB_ANDA> .
 1. Masuk ke folder backend dan buat Virtual Environment terisolasi:
    ```bash
    cd backend
-   python3 -m venv venv
+   python3.12 -m venv venv
    source venv/bin/activate
    ```
-2. **Upgrade Pip (PENTING)**. `pip` versi lama sering gagal menginstal paket yang menggunakan format `wheel` modern (penyebab utama gagal install `pyrfc`):
+2. **Upgrade Pip (PENTING)**. `pip` versi lama sering gagal menginstal paket yang menggunakan format `wheel` modern:
    ```bash
    pip install --upgrade pip setuptools wheel
    ```
@@ -81,7 +76,6 @@ git clone <URL_GITHUB_ANDA> .
    ```bash
    pip install -r requirements.txt
    ```
-   *(Catatan: Jika `pyrfc` masih gagal, pastikan Anda menggunakan versi Python yang didukung (misal 3.10) dan langkah nomor 2 sudah dilakukan dengan benar).*
 
 ---
 
@@ -99,64 +93,95 @@ git clone <URL_GITHUB_ANDA> .
    ```bash
    npm run build
    ```
-   *(Proses ini akan menghasilkan folder `dist` yang memuat file HTML/JS/CSS statis dan sangat ringan).*
+   *(Proses ini akan menghasilkan folder `dist` yang memuat file HTML/JS/CSS statis).*
 
 ---
 
-## 6. Menjalankan Aplikasi di Server secara Permanen
+## 6. Menjalankan Aplikasi di Server secara Permanen (Systemd)
 
-Untuk *production*, sangat disarankan menggunakan **PM2** (Node.js Process Manager) agar aplikasi Anda otomatis berjalan di latar belakang (background) dan langsung menyala otomatis ketika server linux di-*restart*.
+Untuk menjaga *backend* tetap menyala dan otomatis *restart* saat server Linux di-*reboot*, kita gunakan **systemd**.
 
-### Install PM2
-```bash
-sudo npm install -g pm2
-```
+1. Buat file service:
+   ```bash
+   sudo nano /etc/systemd/system/abapgit-backend.service
+   ```
+2. Isi dengan konfigurasi berikut (sesuaikan `User` dan `WorkingDirectory`):
+   ```ini
+   [Unit]
+   Description=ABAP Git FastAPI Backend
+   After=network.target
 
-### Jalankan Backend (FastAPI)
-Masuk ke folder `~/abap-git` dan jalankan:
-```bash
-pm2 start "cd backend && source venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000" --name "abap-backend"
-```
+   [Service]
+   User=root
+   WorkingDirectory=/var/www/ABAP-Git/backend
+   ExecStart=/var/www/ABAP-Git/backend/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+   Restart=always
 
-### Jalankan Frontend (Serve statis)
-Gunakan modul `serve` untuk menyajikan folder `dist`:
-```bash
-sudo npm install -g serve
-pm2 start "serve -s frontend/dist -l 5173" --name "abap-frontend"
-```
-
-### Simpan Konfigurasi PM2 (Startup Otomatis)
-```bash
-pm2 save
-pm2 startup
-```
-Lalu *copy-paste* perintah yang dimunculkan oleh `pm2 startup` di terminal Anda.
+   [Install]
+   WantedBy=multi-user.target
+   ```
+3. Aktifkan dan jalankan service:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable abapgit-backend
+   sudo systemctl start abapgit-backend
+   ```
 
 ---
 ---
 
 ## 🔁 Panduan Update Aplikasi (Deployment Lanjutan)
 
-Anda **TIDAK PERLU** melakukan `git clone` atau menginstal SAP SDK lagi ketika ada pembaharuan fitur dari GitHub. Ikuti 3 langkah cepat berikut di *server* Anda:
+Ketika ada pembaharuan fitur dari GitHub, ikuti 3 langkah cepat berikut di *server* Anda:
 
 ### 1. Tarik Perubahan Baru
 ```bash
-cd ~/abap-git
+cd /var/www/ABAP-Git
 git pull origin main
 ```
 
 ### 2. Update Backend (Jika ada library python baru & fitur baru)
 ```bash
-source backend/venv/bin/activate
-pip install -r backend/requirements.txt  # Opsional: Jika ada package Python baru
+cd backend
+source venv/bin/activate
+pip install -r requirements.txt  # Opsional: Jika ada package Python baru
 sudo systemctl restart abapgit-backend   # Restart service systemd backend
 ```
 
 ### 3. Update Frontend (Jika ada perubahan Tampilan UI/React)
 ```bash
-cd frontend
+cd ../frontend
 npm install        # Opsional: Jika Anda menambah library Node baru
 npm run build      # Wajib agar folder 'dist' diperbarui untuk dibaca oleh Nginx
 ```
 
-Aplikasi Anda kini sudah selesai di-*update* dan langsung aktif!
+---
+---
+
+## ⚠️ Troubleshooting & Masalah Umum
+
+### 1. `pyrfc` Gagal Diinstal (No matching distribution found)
+**Gejala:** Saat menjalankan `pip install -r requirements.txt`, muncul error `ERROR: Could not find a version that satisfies the requirement pyrfc`.
+**Penyebab:** Repositori PyPI memblokir beberapa versi PyRFC untuk OS tertentu.
+**Solusi Bypass:** Download *wheel* aslinya langsung dari GitHub SAP dan instal manual:
+```bash
+# Pastikan Anda berada di dalam venv
+wget https://github.com/SAP/PyRFC/releases/download/3.3.1/pyrfc-3.3.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+pip install pyrfc-3.3.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+```
+
+### 2. Error Saat Import PyRFC: `libsapucum.so: cannot open shared object file`
+**Gejala:** Saat Anda mencoba menjalankan backend, muncul error C++ library tidak ditemukan.
+**Penyebab:** OS Linux belum mendaftarkan *path* ke file SDK SAP (walaupun file-nya ada).
+**Solusi:** Jalankan ulang *ldconfig* untuk memaksanya membaca path `/usr/local/sap/nwrfcsdk/lib`:
+```bash
+echo "/usr/local/sap/nwrfcsdk/lib" | sudo tee /etc/ld.so.conf.d/nwrfcsdk.conf
+sudo ldconfig
+# Lalu restart backend
+sudo systemctl restart abapgit-backend
+```
+
+### 3. Perintah `pm2` Not Found
+**Gejala:** Error `Command 'pm2' not found` saat mencoba me-restart backend.
+**Penyebab:** Jika Anda menggunakan `systemd` (seperti di panduan nomor 6), maka PM2 tidak digunakan.
+**Solusi:** Selalu gunakan `sudo systemctl restart abapgit-backend`.

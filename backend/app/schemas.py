@@ -99,6 +99,7 @@ class SapWriteRequest(BaseModel):
 class GenerateCommitRequest(BaseModel):
     diff: str
     program_name: Optional[str] = None
+    previous_commit_message: Optional[str] = None
 
 
 class GenerateCommitResponse(BaseModel):
@@ -112,6 +113,7 @@ class CommitRequest(BaseModel):
     author: Optional[str] = "system"
     sandbox_name: Optional[str] = None
     parent_version_hash: Optional[str] = None
+    amend: bool = False
 
 
 class EditCommitRequest(BaseModel):

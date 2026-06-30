@@ -61,10 +61,10 @@ export const api = {
   },
   writeToSap: (data) => request("/api/sap/write", { method: "POST", body: JSON.stringify(data) }),
 
-  generateCommit: (diff, programName) =>
+  generateCommit: (diff, programName, previousCommitMessage) =>
     request("/api/ai/generate-commit", {
       method: "POST",
-      body: JSON.stringify({ diff, program_name: programName }),
+      body: JSON.stringify({ diff, program_name: programName, previous_commit_message: previousCommitMessage }),
     }),
 
   commitVersion: (data) => request("/api/git/commit", { method: "POST", body: JSON.stringify(data) }),
