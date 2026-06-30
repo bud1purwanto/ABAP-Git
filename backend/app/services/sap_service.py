@@ -352,7 +352,11 @@ def check_multiple_logon(sandbox: Sandbox, author: str | None = None) -> dict:
                 }
             )
 
-        watched = {u.upper() for u in (author, sandbox.rfc_user) if u}
+        # Only watch the RFC user configured on the sandbox.
+        # The web-app author may be logged into SAP GUI with a *different*
+        # personal account — that is NOT a conflict because the middleware
+        # connects with rfc_user, not the author's SAP account.
+        watched = {sandbox.rfc_user.upper()} if sandbox.rfc_user else set()
         conflicting_user = None
         conflicting_terminal = None
         for d in dialog_sessions:
