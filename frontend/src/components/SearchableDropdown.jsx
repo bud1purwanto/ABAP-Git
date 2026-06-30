@@ -28,7 +28,9 @@ export default function SearchableDropdown({
     typeof opt === "string" ? { label: opt, value: opt } : opt
   );
 
-  // Update local search when value changes from outside
+  // Update local search when value changes from outside or the selected option's label changes
+  const matchedLabel = normalizedOptions.find((opt) => String(opt.value) === String(value))?.label || "";
+
   useEffect(() => {
     if (value === null || value === undefined || value === "") {
       setSearch("");
@@ -40,7 +42,7 @@ export default function SearchableDropdown({
     } else {
       setSearch(String(value));
     }
-  }, [value, options.length]);
+  }, [value, matchedLabel]);
 
   const isExactMatch = normalizedOptions.some((opt) => opt.label === search);
   
