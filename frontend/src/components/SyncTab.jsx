@@ -69,6 +69,7 @@ export default function SyncTab({ author }) {
   const [loadingAction, setLoadingAction] = useState("");
   const [confirmSync, setConfirmSync] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
+  const [isSwapped, setIsSwapped] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const toast = useToast();
 
@@ -159,8 +160,11 @@ export default function SyncTab({ author }) {
   function resetCompare() {
     setSourceSource("");
     setSandboxSource("");
+    setSourceTransport(null);
+    setSandboxTransport(null);
     setIdentical(false);
     setHasCompared(false);
+    setIsSwapped(false);
   }
 
   function handleProgramChange(value) {
@@ -254,6 +258,18 @@ export default function SyncTab({ author }) {
         ...sapProgramIncludes,
       ]
     : sapPrograms;
+
+  const dispLeftLabel = isSwapped ? selectedTarget?.name : selectedSource?.name;
+  const dispLeftSubLabel = isSwapped ? "Target sandbox — current state, will be overwritten by Sync" : `${sourceEnvLabel} — source of truth, stays unchanged`;
+  const dispLeftTransport = isSwapped ? sandboxTransport : sourceTransport;
+  const dispLeftSource = isSwapped ? sandboxSource : sourceSource;
+  const dispLeftColor = isSwapped ? "var(--accent-2)" : "#f43f5e";
+  
+  const dispRightLabel = isSwapped ? selectedSource?.name : selectedTarget?.name;
+  const dispRightSubLabel = isSwapped ? `${sourceEnvLabel} — source of truth, stays unchanged` : "Target sandbox — current state, will be overwritten by Sync";
+  const dispRightTransport = isSwapped ? sourceTransport : sandboxTransport;
+  const dispRightSource = isSwapped ? sourceSource : sandboxSource;
+  const dispRightColor = isSwapped ? "#f43f5e" : "var(--accent-2)";
 
   return (
     <div className="page-padding" style={styles.container}>
@@ -366,11 +382,23 @@ export default function SyncTab({ author }) {
         </div>
       </div>
 
-      <div className="diff-viewer-wrapper" style={{ marginTop: 20 }}>
+      <div className="diff-viewer-wrapper" key={isSwapped ? "swapped" : "normal"} style={{ marginTop: 20, animation: "fadeIn 0.25s ease-in-out" }}>
         <div className="glass-panel diff-panel" style={styles.diffPanel}>
           <div style={styles.diffHeaderCol}>
             <div style={styles.diffTitleRow}>
-              <h3 style={styles.diffTitleCentered}>Comparison</h3>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center" }}>
+                <h3 style={styles.diffTitleCentered}>Comparison</h3>
+                {hasCompared && !identical && (
+                  <button 
+                    className="btn" 
+                    style={{ padding: "2px 6px", fontSize: 11, display: "flex", alignItems: "center", gap: 4, background: "rgba(255,255,255,0.05)", border: "1px solid var(--panel-border)", color: "var(--text-secondary)", borderRadius: 4 }}
+                    onClick={() => setIsSwapped(!isSwapped)}
+                    title="Swap Original and Modified"
+                  >
+                    ⇄ Swap
+                  </button>
+                )}
+              </div>
               {hasCompared && !identical && (
                 <button className="btn" style={styles.fullscreenBtnAbs} onClick={() => setShowFullscreen(true)}>
                   ⛶ Fullscreen
@@ -381,19 +409,19 @@ export default function SyncTab({ author }) {
               <>
                 <div style={styles.colTitles}>
                   <div style={styles.colTitle}>
-                    <span style={{ ...styles.legendDot, background: "#f43f5e" }} />
-                    <strong>{selectedSource?.name}</strong>
-                    <span style={styles.legendNote}>source of truth</span>
+                    <span style={{ ...styles.legendDot, background: dispLeftColor }} />
+                    <strong>{dispLeftLabel}</strong>
+                    <span style={styles.legendNote}>{isSwapped ? "target sandbox" : "source of truth"}</span>
                   </div>
                   <div style={styles.colTitle}>
-                    <span style={{ ...styles.legendDot, background: "var(--accent-2)" }} />
-                    <strong>{selectedTarget?.name}</strong>
-                    <span style={styles.legendNote}>target sandbox</span>
+                    <span style={{ ...styles.legendDot, background: dispRightColor }} />
+                    <strong>{dispRightLabel}</strong>
+                    <span style={styles.legendNote}>{isSwapped ? "source of truth" : "target sandbox"}</span>
                   </div>
                 </div>
                 <div style={styles.crBoxes}>
-                  <TransportBox info={sourceTransport} environment={selectedSource?.environment} />
-                  <TransportBox info={sandboxTransport} environment={selectedTarget?.environment} />
+                  <TransportBox info={dispLeftTransport} environment={isSwapped ? selectedTarget?.environment : selectedSource?.environment} />
+                  <TransportBox info={dispRightTransport} environment={isSwapped ? selectedSource?.environment : selectedTarget?.environment} />
                 </div>
               </>
             )}
@@ -414,7 +442,7 @@ export default function SyncTab({ author }) {
                 <strong>{selectedSource?.name}</strong> for <strong>{programName}</strong>. Nothing to sync.
               </div>
             ) : (
-              <DiffViewer original={sourceSource} modified={sandboxSource} sideBySide={true} />
+              <DiffViewer original={dispLeftSource} modified={dispRightSource} sideBySide={true} />
             )}
           </div>
         </div>
@@ -424,14 +452,14 @@ export default function SyncTab({ author }) {
         open={showFullscreen}
         onClose={() => setShowFullscreen(false)}
         title={`Sync Comparison: ${programName}`}
-        leftLabel={selectedSource?.name}
-        leftSubLabel={`${sourceEnvLabel} — source of truth, stays unchanged`}
-        leftColor="#f43f5e"
-        rightLabel={selectedTarget?.name}
-        rightSubLabel="Target sandbox — current state, will be overwritten by Sync"
-        rightColor="var(--accent-2)"
-        leftCode={sourceSource}
-        rightCode={sandboxSource}
+        leftLabel={dispLeftLabel}
+        leftSubLabel={dispLeftSubLabel}
+        leftColor={dispLeftColor}
+        rightLabel={dispRightLabel}
+        rightSubLabel={dispRightSubLabel}
+        rightColor={dispRightColor}
+        leftCode={dispLeftSource}
+        rightCode={dispRightSource}
         headerActions={
           <button
             className="btn btn-success"

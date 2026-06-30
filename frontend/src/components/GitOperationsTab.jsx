@@ -97,6 +97,7 @@ export default function GitOperationsTab({ author }) {
       api.getTCodes(sandboxId).catch(() => ({ data: [] })),
       api.getPrograms(sandboxId).catch(() => ({ data: [] })),
     ]).then(([tcodesRes, programsRes]) => {
+      setSapTCodes(tcodesRes.data || []);
       setSapPrograms(programsRes.data ? programsRes.data.map((p) => p.name) : []);
     }).finally(() => setIsLoadingSapMeta(false));
     

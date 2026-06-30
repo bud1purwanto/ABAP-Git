@@ -297,7 +297,8 @@ def get_object_transport_info(sandbox: Sandbox, program_name: str) -> dict:
                 OPTIONS=_build_rfc_options(query),
                 FIELDS=[{"FIELDNAME": "TRKORR"}], ROWCOUNT=100,
             )
-            trs = sorted({r["WA"].split("|")[0].strip() for r in res.get("DATA", []) if r["WA"].strip()})
+            raw_trs = {r["WA"].split("|")[0].strip() for r in res.get("DATA", []) if r["WA"].strip()}
+            trs = sorted({t for t in raw_trs if len(t) >= 4 and t[3] == 'K'})
         except Exception:
             trs = []
 

@@ -75,6 +75,7 @@ export default function CompareServerTab() {
 
   const [loadingAction, setLoadingAction] = useState("");
   const [showFullscreen, setShowFullscreen] = useState(false);
+  const [isSwapped, setIsSwapped] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const toast = useToast();
 
@@ -172,6 +173,7 @@ export default function CompareServerTab() {
     setRightTransport(null);
     setIdentical(false);
     setHasCompared(false);
+    setIsSwapped(false);
   }
 
   function handleLeftChange(val) {
@@ -253,6 +255,13 @@ export default function CompareServerTab() {
         ...sapProgramIncludes,
       ]
     : sapPrograms;
+
+  const dispLeft = isSwapped ? selectedRight : selectedLeft;
+  const dispRight = isSwapped ? selectedLeft : selectedRight;
+  const dispLeftTransport = isSwapped ? rightTransport : leftTransport;
+  const dispRightTransport = isSwapped ? leftTransport : rightTransport;
+  const dispLeftSource = isSwapped ? rightSource : leftSource;
+  const dispRightSource = isSwapped ? leftSource : rightSource;
 
   return (
     <div className="page-padding" style={styles.container}>
@@ -340,11 +349,23 @@ export default function CompareServerTab() {
         </div>
       </div>
 
-      <div className="diff-viewer-wrapper" style={{ marginTop: 20 }}>
+      <div className="diff-viewer-wrapper" key={isSwapped ? "swapped" : "normal"} style={{ marginTop: 20, animation: "fadeIn 0.25s ease-in-out" }}>
         <div className="glass-panel diff-panel" style={styles.diffPanel}>
           <div style={styles.diffHeaderCol}>
             <div style={styles.diffTitleRow}>
-              <h3 style={styles.diffTitleCentered}>Comparison</h3>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center" }}>
+                <h3 style={styles.diffTitleCentered}>Comparison</h3>
+                {hasCompared && !identical && (
+                  <button 
+                    className="btn" 
+                    style={{ padding: "2px 6px", fontSize: 11, display: "flex", alignItems: "center", gap: 4, background: "rgba(255,255,255,0.05)", border: "1px solid var(--panel-border)", color: "var(--text-secondary)", borderRadius: 4 }}
+                    onClick={() => setIsSwapped(!isSwapped)}
+                    title="Swap Original and Modified"
+                  >
+                    ⇄ Swap
+                  </button>
+                )}
+              </div>
               {hasCompared && !identical && (
                 <button className="btn" style={styles.fullscreenBtnAbs} onClick={() => setShowFullscreen(true)}>
                   ⛶ Fullscreen
@@ -355,19 +376,19 @@ export default function CompareServerTab() {
               <>
                 <div style={styles.colTitles}>
                   <div style={styles.colTitle}>
-                    <span style={{ ...styles.legendDot, background: "var(--accent-2)" }} />
-                    <strong>{selectedLeft?.name}</strong>
-                    <span style={styles.legendNote}>{ENV_LABELS[selectedLeft?.environment]}</span>
+                    <span style={{ ...styles.legendDot, background: isSwapped ? "#f59e0b" : "var(--accent-2)" }} />
+                    <strong>{dispLeft?.name}</strong>
+                    <span style={styles.legendNote}>{ENV_LABELS[dispLeft?.environment]}</span>
                   </div>
                   <div style={styles.colTitle}>
-                    <span style={{ ...styles.legendDot, background: "#f59e0b" }} />
-                    <strong>{selectedRight?.name}</strong>
-                    <span style={styles.legendNote}>{ENV_LABELS[selectedRight?.environment]}</span>
+                    <span style={{ ...styles.legendDot, background: isSwapped ? "var(--accent-2)" : "#f59e0b" }} />
+                    <strong>{dispRight?.name}</strong>
+                    <span style={styles.legendNote}>{ENV_LABELS[dispRight?.environment]}</span>
                   </div>
                 </div>
                 <div style={styles.crBoxes}>
-                  <TransportBox info={leftTransport} environment={selectedLeft?.environment} />
-                  <TransportBox info={rightTransport} environment={selectedRight?.environment} />
+                  <TransportBox info={dispLeftTransport} environment={dispLeft?.environment} />
+                  <TransportBox info={dispRightTransport} environment={dispRight?.environment} />
                 </div>
               </>
             )}
@@ -387,7 +408,7 @@ export default function CompareServerTab() {
                 identical version of <strong>{programName}</strong>. No differences.
               </div>
             ) : (
-              <DiffViewer original={leftSource} modified={rightSource} sideBySide={true} />
+              <DiffViewer original={dispLeftSource} modified={dispRightSource} sideBySide={true} />
             )}
           </div>
         </div>
@@ -397,14 +418,14 @@ export default function CompareServerTab() {
         open={showFullscreen}
         onClose={() => setShowFullscreen(false)}
         title={`Compare: ${programName}`}
-        leftLabel={selectedLeft?.name}
-        leftSubLabel={ENV_LABELS[selectedLeft?.environment]}
-        leftColor="var(--accent-2)"
-        rightLabel={selectedRight?.name}
-        rightSubLabel={ENV_LABELS[selectedRight?.environment]}
-        rightColor="#f59e0b"
-        leftCode={leftSource}
-        rightCode={rightSource}
+        leftLabel={dispLeft?.name}
+        leftSubLabel={ENV_LABELS[dispLeft?.environment]}
+        leftColor={isSwapped ? "#f59e0b" : "var(--accent-2)"}
+        rightLabel={dispRight?.name}
+        rightSubLabel={ENV_LABELS[dispRight?.environment]}
+        rightColor={isSwapped ? "var(--accent-2)" : "#f59e0b"}
+        leftCode={dispLeftSource}
+        rightCode={dispRightSource}
       />
     </div>
   );
