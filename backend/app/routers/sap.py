@@ -215,6 +215,12 @@ def sync_compare(payload: SyncCompareRequest, db: Session = Depends(get_db)):
     show a side-by-side diff. Direction of a later sync: source -> sandbox."""
     source, target = _resolve_sync_servers(db, payload.source_id, payload.target_id)
 
+    # Audit Rule: If source restricts multiple logon, ensure no active dialog session
+    if source.environment != "SANDBOX" and not source.allow_multiple_logon:
+        logon_check = sap_service.check_multiple_logon(source, "system")
+        if not logon_check["passed"]:
+            raise HTTPException(status_code=403, detail=f"Audit rule: Source server '{source.name}' has an active dialog session. Data fetch blocked.")
+
     try:
         source_source = sap_service.read_program(source, payload.program_name)
     except Exception as exc:
@@ -248,6 +254,12 @@ def sync_compare(payload: SyncCompareRequest, db: Session = Depends(get_db)):
 def sync_apply(payload: SyncApplyRequest, db: Session = Depends(get_db)):
     """Overwrite the program in the target sandbox with the source server's version."""
     source, target = _resolve_sync_servers(db, payload.source_id, payload.target_id)
+
+    # Audit Rule: If source restricts multiple logon, ensure no active dialog session
+    if source.environment != "SANDBOX" and not source.allow_multiple_logon:
+        logon_check = sap_service.check_multiple_logon(source, payload.author)
+        if not logon_check["passed"]:
+            raise HTTPException(status_code=403, detail=f"Audit rule: Source server '{source.name}' has an active dialog session. Sync blocked.")
 
     try:
         source_source = sap_service.read_program(source, payload.program_name)
@@ -329,6 +341,13 @@ def compare_servers(payload: CompareServersRequest, db: Session = Depends(get_db
             status_code=400,
             detail="Right server must be strictly lower in the promotion path than left server.",
         )
+
+    # Audit Rule: For non-sandbox servers that restrict multiple logon, block fetch if session is active
+    for server in (left, right):
+        if server.environment != "SANDBOX" and not server.allow_multiple_logon:
+            logon_check = sap_service.check_multiple_logon(server, "system")
+            if not logon_check["passed"]:
+                raise HTTPException(status_code=403, detail=f"Audit rule: Server '{server.name}' has an active dialog session. Data fetch blocked.")
 
     # Tolerate a program missing on either side — show it as empty so the diff still renders.
     try:

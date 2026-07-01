@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.sandbox import Sandbox
+from app.models.activity_log import ActivityLog
+from app.models.program_version import ProgramVersion
 from app.schemas import SandboxCreate, SandboxOut, SandboxUpdate
 from app.security_deps import require_super_admin
 
@@ -74,6 +76,8 @@ def update_sandbox(sandbox_id: int, payload: SandboxUpdate, db: Session = Depend
 
     _check_singleton(db, payload.environment, exclude_id=sandbox_id)
 
+    old_name = sandbox.name
+
     sandbox.name = payload.name
     sandbox.host = payload.host
     sandbox.sysnr = payload.sysnr
@@ -85,6 +89,10 @@ def update_sandbox(sandbox_id: int, payload: SandboxUpdate, db: Session = Depend
     if payload.allow_multiple_logon is not None:
         sandbox.allow_multiple_logon = payload.allow_multiple_logon
     sandbox.is_live = payload.environment == "DEV"
+
+    if old_name != payload.name:
+        db.query(ActivityLog).filter(ActivityLog.sandbox_name == old_name).update({"sandbox_name": payload.name})
+        db.query(ProgramVersion).filter(ProgramVersion.sandbox_name == old_name).update({"sandbox_name": payload.name})
 
     db.commit()
     db.refresh(sandbox)
@@ -102,3 +110,18 @@ def delete_sandbox(sandbox_id: int, requested_by: str = Query(...), db: Session 
     db.delete(sandbox)
     db.commit()
     return None
+
+@router.get("/{sandbox_id}/dependencies")
+def get_sandbox_dependencies(sandbox_id: int, db: Session = Depends(get_db)):
+    sandbox = db.query(Sandbox).filter(Sandbox.id == sandbox_id).first()
+    if not sandbox:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    prog_count = db.query(ProgramVersion).filter(ProgramVersion.sandbox_name == sandbox.name).count()
+    log_count = db.query(ActivityLog).filter(ActivityLog.sandbox_name == sandbox.name).count()
+    
+    return {
+        "sandbox_name": sandbox.name,
+        "program_versions": prog_count,
+        "activity_logs": log_count
+    }

@@ -269,7 +269,7 @@ export default function GitLogTab({ currentUser }) {
               placeholder="Select or type T-Code..."
               value={tcode}
               onChange={handleTCodeChange}
-              options={sapTCodes.map((t) => ({ label: `${t.tcode} — ${t.program}`, value: t.tcode }))}
+              options={sapTCodes.map((t) => ({ label: `${t.tcode} — ${t.description || t.program}`, value: t.tcode, display: t.tcode }))}
               isLoading={isLoadingSapMeta}
               disabled={!sandboxId}
             />

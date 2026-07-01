@@ -77,6 +77,7 @@ export default function SyncTab({ author }) {
   const prevProgramRef = useRef(programName);
   const prevSourceRef = useRef(sourceId);
   const prevTargetRef = useRef(targetId);
+  const prevServersOkRef = useRef(false);
 
   const safeSandboxes = sandboxes || [];
   const sourceServers = safeSandboxes.filter((s) => s.environment !== "SANDBOX"); // DEV/QA/PROD
@@ -100,8 +101,8 @@ export default function SyncTab({ author }) {
   });
 
   const serversOk =
-    (sourceVal.passed !== false) &&
-    (targetVal.passed !== false);
+    (sourceVal.passed === true) &&
+    (targetVal.passed === true);
 
   useEffect(() => {
     api
@@ -191,13 +192,17 @@ export default function SyncTab({ author }) {
       if (
         debouncedProgram !== prevProgramRef.current ||
         sourceId !== prevSourceRef.current ||
-        targetId !== prevTargetRef.current
+        targetId !== prevTargetRef.current ||
+        serversOk !== prevServersOkRef.current
       ) {
         prevProgramRef.current = debouncedProgram;
         prevSourceRef.current = sourceId;
         prevTargetRef.current = targetId;
+        prevServersOkRef.current = serversOk;
         handleCompare(debouncedProgram);
       }
+    } else {
+      prevServersOkRef.current = serversOk;
     }
   }, [debouncedProgram, sourceId, targetId, serversOk]);
 
@@ -334,7 +339,7 @@ export default function SyncTab({ author }) {
               placeholder="Select or type T-Code..."
               value={tcode}
               onChange={handleTCodeChange}
-              options={sapTCodes.map((t) => ({ label: `${t.tcode} — ${t.program}`, value: t.tcode }))}
+              options={sapTCodes.map((t) => ({ label: `${t.tcode} — ${t.description || t.program}`, value: t.tcode, display: t.tcode }))}
               isLoading={isLoadingSapMeta}
               disabled={!sourceId}
             />
@@ -518,7 +523,7 @@ const styles = {
     fontSize: 11, fontWeight: 700, borderRadius: 5, padding: "1px 8px",
   },
   crDesc: { fontSize: 12.5, color: "var(--text-primary)", textAlign: "center", lineHeight: 1.4, wordBreak: "break-word" },
-  placeholder: { color: "var(--text-muted)", fontStyle: "italic", padding: "24px 4px", fontSize: 13.5, lineHeight: 1.6 },
+  placeholder: { color: "var(--text-muted)", fontStyle: "italic", padding: "24px 4px", fontSize: 13.5, lineHeight: 1.6, textAlign: "center" },
   identicalBox: {
     color: "var(--success)",
     background: "rgba(52, 211, 153, 0.1)",
@@ -527,6 +532,7 @@ const styles = {
     padding: "16px 18px",
     fontSize: 13.5,
     lineHeight: 1.6,
+    textAlign: "center",
   },
   centerMsg: { height: "100%", display: "flex", alignItems: "center", justifyContent: "center" },
 };

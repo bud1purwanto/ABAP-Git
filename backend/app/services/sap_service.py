@@ -164,21 +164,48 @@ def get_tcodes(sandbox: Sandbox) -> list[dict]:
     """Fetch Z* T-codes and their associated programs from TSTC."""
     conn = _connect(sandbox)
     try:
-        result = conn.call(
+        result_tstc = conn.call(
             "RFC_READ_TABLE",
             QUERY_TABLE="TSTC",
             DELIMITER="|",
             OPTIONS=[{"TEXT": "TCODE LIKE 'Z%' AND PGMNA <> ' '"}],
             FIELDS=[{"FIELDNAME": "TCODE"}, {"FIELDNAME": "PGMNA"}],
-            ROWCOUNT=1000
+            ROWCOUNT=0
         )
+        
+        # Fetch descriptions
+        try:
+            result_tstct = conn.call(
+                "RFC_READ_TABLE",
+                QUERY_TABLE="TSTCT",
+                DELIMITER="|",
+                OPTIONS=[{"TEXT": "TCODE LIKE 'Z%'"}],
+                FIELDS=[{"FIELDNAME": "TCODE"}, {"FIELDNAME": "SPRSL"}, {"FIELDNAME": "TTEXT"}],
+                ROWCOUNT=0
+            )
+            tstct_data = result_tstct.get("DATA", [])
+        except Exception:
+            tstct_data = []
+
+        texts = {}
+        for row in tstct_data:
+            parts = row["WA"].split("|")
+            tc = parts[0].strip()
+            sprsl = parts[1].strip() if len(parts) > 1 else ""
+            txt = parts[2].strip() if len(parts) > 2 else ""
+            if tc:
+                # Prioritize English ('E'). If not 'E', only set if not already set.
+                if sprsl == 'E' or tc not in texts:
+                    texts[tc] = txt
+
         tcodes = []
-        for row in result.get("DATA", []):
+        for row in result_tstc.get("DATA", []):
             parts = row["WA"].split("|")
             tcode = parts[0].strip()
             program = parts[1].strip() if len(parts) > 1 else ""
+            desc = texts.get(tcode, "")
             if tcode:
-                tcodes.append({"tcode": tcode, "program": program})
+                tcodes.append({"tcode": tcode, "program": program, "description": desc})
         return tcodes
     finally:
         conn.close()

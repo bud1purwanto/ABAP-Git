@@ -83,6 +83,7 @@ export default function CompareServerTab() {
   const prevProgramRef = useRef(programName);
   const prevLeftRef = useRef(leftId);
   const prevRightRef = useRef(rightId);
+  const prevServersOkRef = useRef(false);
 
   const safeSandboxes = sandboxes || [];
   const selectedLeft = safeSandboxes.find((s) => String(s.id) === String(leftId));
@@ -99,7 +100,7 @@ export default function CompareServerTab() {
     environment: selectedRight?.environment || "",
   });
 
-  const serversOk = (leftVal.passed !== false) && (rightVal.passed !== false);
+  const serversOk = (leftVal.passed === true) && (rightVal.passed === true);
 
   // Left can be any server except the lowest rank (since right must be lower).
   const leftOptions = [...safeSandboxes]
@@ -179,10 +180,18 @@ export default function CompareServerTab() {
   function handleLeftChange(val) {
     setLeftId(val);
     resetCompare();
-    // If the current right is no longer lower than the new left, clear it.
     const newLeft = safeSandboxes.find((s) => String(s.id) === String(val));
-    if (selectedRight && newLeft && rank(selectedRight) >= rank(newLeft)) {
-      setRightId("");
+    if (newLeft) {
+      // Automatically select the next server in the hierarchy (highest rank below newLeft)
+      const below = [...safeSandboxes]
+        .sort((a, b) => rank(b) - rank(a)) // Sort descending by rank
+        .find((s) => rank(s) < rank(newLeft));
+      
+      if (below) {
+        setRightId(below.id);
+      } else {
+        setRightId("");
+      }
     }
   }
 
@@ -208,13 +217,17 @@ export default function CompareServerTab() {
       if (
         debouncedProgram !== prevProgramRef.current ||
         leftId !== prevLeftRef.current ||
-        rightId !== prevRightRef.current
+        rightId !== prevRightRef.current ||
+        serversOk !== prevServersOkRef.current
       ) {
         prevProgramRef.current = debouncedProgram;
         prevLeftRef.current = leftId;
         prevRightRef.current = rightId;
+        prevServersOkRef.current = serversOk;
         handleCompare(debouncedProgram);
       }
+    } else {
+      prevServersOkRef.current = serversOk;
     }
   }, [debouncedProgram, leftId, rightId, serversOk]);
 
@@ -318,7 +331,7 @@ export default function CompareServerTab() {
               placeholder="Select or type T-Code..."
               value={tcode}
               onChange={handleTCodeChange}
-              options={sapTCodes.map((t) => ({ label: `${t.tcode} — ${t.program}`, value: t.tcode }))}
+              options={sapTCodes.map((t) => ({ label: `${t.tcode} — ${t.description || t.program}`, value: t.tcode, display: t.tcode }))}
               isLoading={isLoadingSapMeta}
               disabled={!leftId}
             />
@@ -463,7 +476,7 @@ const styles = {
     fontSize: 11, fontWeight: 700, borderRadius: 5, padding: "1px 8px",
   },
   crDesc: { fontSize: 12.5, color: "var(--text-primary)", textAlign: "center", lineHeight: 1.4, wordBreak: "break-word" },
-  placeholder: { color: "var(--text-muted)", fontStyle: "italic", padding: "24px 4px", fontSize: 13.5, lineHeight: 1.6 },
+  placeholder: { color: "var(--text-muted)", fontStyle: "italic", padding: "24px 4px", fontSize: 13.5, lineHeight: 1.6, textAlign: "center" },
   identicalBox: {
     color: "var(--success)",
     background: "rgba(52, 211, 153, 0.1)",
@@ -472,6 +485,7 @@ const styles = {
     padding: "16px 18px",
     fontSize: 13.5,
     lineHeight: 1.6,
+    textAlign: "center",
   },
   centerMsg: { height: "100%", display: "flex", alignItems: "center", justifyContent: "center" },
 };

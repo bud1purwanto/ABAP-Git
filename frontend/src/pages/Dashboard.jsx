@@ -8,6 +8,7 @@ import CompareServerTab from "../components/CompareServerTab";
 import UsersTab from "../components/UsersTab";
 import ThemeToggle from "../components/ThemeToggle";
 import ConfirmModal from "../components/ConfirmModal";
+import ChangePasswordModal from "../components/ChangePasswordModal";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: "▦" },
@@ -23,6 +24,7 @@ export default function Dashboard({ user, onLogout }) {
   const [activeTab, setActiveTab] = useState("overview");
   const [navOpen, setNavOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const displayName = user.git_author_name || user.username;
 
   function selectTab(id) {
@@ -93,12 +95,12 @@ export default function Dashboard({ user, onLogout }) {
           <div className="user-card-divider" />
 
           <div style={styles.userBoxRow2}>
-            <span style={styles.onlineText}>
-              <span style={styles.onlineTextDot} /> Online
-            </span>
             <div style={styles.userBoxActions}>
               <ThemeToggle />
               <span className="user-card-vdivider" />
+              <button className="btn" style={styles.logoutBtn} onClick={() => setChangePasswordOpen(true)} title="Change Password">
+                🔑
+              </button>
               <button className="btn" style={styles.logoutBtn} onClick={() => setConfirmLogout(true)} title="Logout">
                 ⏻
               </button>
@@ -117,6 +119,12 @@ export default function Dashboard({ user, onLogout }) {
           onLogout();
         }}
         onCancel={() => setConfirmLogout(false)}
+      />
+
+      <ChangePasswordModal
+        open={changePasswordOpen}
+        onClose={() => setChangePasswordOpen(false)}
+        username={user.username}
       />
 
       <main className="app-main">
@@ -192,14 +200,17 @@ const styles = {
   userBoxRow2: {
     display: "flex",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "center",
     gap: 10,
+    width: "100%",
   },
   userBoxActions: {
     display: "flex",
     alignItems: "center",
+    justifyContent: "center",
     gap: 8,
     flexShrink: 0,
+    width: "100%",
   },
   avatarWrapper: {
     position: "relative",

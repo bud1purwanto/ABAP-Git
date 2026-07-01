@@ -31,6 +31,7 @@ export default function SandboxesTab({ currentUser }) {
   const [submitting, setSubmitting] = useState(false);
   const [testing, setTesting] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
+  const [pendingRename, setPendingRename] = useState(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const toast = useToast();
 
@@ -81,6 +82,28 @@ export default function SandboxesTab({ currentUser }) {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (editingId) {
+      const original = sandboxes.find((s) => s.id === editingId);
+      if (original && original.name !== form.name) {
+        setSubmitting(true);
+        try {
+          const deps = await api.getSandboxDependencies(editingId);
+          if (deps.program_versions > 0 || deps.activity_logs > 0) {
+            setPendingRename(deps);
+            setSubmitting(false);
+            return;
+          }
+        } catch (err) {
+          toast.error(err.message);
+          setSubmitting(false);
+          return;
+        }
+      }
+    }
+    await performSave();
+  }
+
+  async function performSave() {
     setSubmitting(true);
     try {
       if (editingId) {
@@ -92,6 +115,7 @@ export default function SandboxesTab({ currentUser }) {
       }
       resetForm();
       await load();
+      setPendingRename(null);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -233,8 +257,8 @@ export default function SandboxesTab({ currentUser }) {
               />
             </div>
 
-            <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-              <button className="btn btn-primary" type="submit" disabled={submitting || testing} style={{ flex: 1 }}>
+            <div style={{ display: "flex", gap: 10, marginTop: 4, flexWrap: "wrap" }}>
+              <button className="btn btn-primary" type="submit" disabled={submitting || testing} style={{ flex: 1, minWidth: "120px" }}>
                 {submitting ? "Saving..." : editingId ? "Save Changes" : "+ Add Server"}
               </button>
               <button
@@ -242,12 +266,12 @@ export default function SandboxesTab({ currentUser }) {
                 className="btn"
                 onClick={handleTestConnection}
                 disabled={testing || submitting}
-                style={{ flex: 1 }}
+                style={{ flex: 1, minWidth: "120px" }}
               >
                 {testing ? "Testing..." : "Test Connection"}
               </button>
               {editingId && (
-                <button type="button" className="btn" onClick={resetForm}>
+                <button type="button" className="btn" onClick={resetForm} style={{ flex: 1, minWidth: "100px" }}>
                   Cancel
                 </button>
               )}
@@ -313,6 +337,15 @@ export default function SandboxesTab({ currentUser }) {
         message={`Are you sure you want to delete "${pendingDelete?.name}"? This cannot be undone.`}
         onConfirm={confirmDelete}
         onCancel={() => setPendingDelete(null)}
+      />
+
+      <ConfirmModal
+        open={!!pendingRename}
+        title="Rename Server"
+        message={`You are renaming this server. It is currently referenced by ${pendingRename?.program_versions} program version(s) and ${pendingRename?.activity_logs} activity log(s). These records will be automatically updated to use the new name. Proceed?`}
+        confirmLabel="Yes, rename and update data"
+        onConfirm={performSave}
+        onCancel={() => setPendingRename(null)}
       />
     </div>
   );

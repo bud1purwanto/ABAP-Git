@@ -29,7 +29,8 @@ export default function SearchableDropdown({
   );
 
   // Update local search when value changes from outside or the selected option's label changes
-  const matchedLabel = normalizedOptions.find((opt) => String(opt.value) === String(value))?.label || "";
+  const matchedOption = normalizedOptions.find((opt) => String(opt.value) === String(value));
+  const matchedDisplay = matchedOption ? (matchedOption.display || matchedOption.label) : "";
 
   useEffect(() => {
     if (value === null || value === undefined || value === "") {
@@ -38,11 +39,11 @@ export default function SearchableDropdown({
     }
     const match = normalizedOptions.find((opt) => String(opt.value) === String(value));
     if (match) {
-      setSearch(match.label);
+      setSearch(match.display || match.label);
     } else {
       setSearch(String(value));
     }
-  }, [value, matchedLabel]);
+  }, [value, matchedDisplay]);
 
   const isExactMatch = normalizedOptions.some((opt) => opt.label === search);
   
@@ -52,8 +53,8 @@ export default function SearchableDropdown({
         opt.label.toLowerCase().includes(String(search).toLowerCase())
       );
 
-  const handleSelect = (val, label) => {
-    setSearch(label);
+  const handleSelect = (val, opt) => {
+    setSearch(opt.display || opt.label);
     onChange(val);
     setIsOpen(false);
   };
@@ -96,7 +97,7 @@ export default function SearchableDropdown({
               <div
                 key={i}
                 style={styles.option}
-                onClick={() => handleSelect(opt.value, opt.label)}
+                onClick={() => handleSelect(opt.value, opt)}
                 onMouseEnter={(e) => (e.target.style.background = "var(--panel-border)")}
                 onMouseLeave={(e) => (e.target.style.background = "transparent")}
               >

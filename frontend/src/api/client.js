@@ -3,6 +3,7 @@ const BASE_URL = `http://${window.location.hostname}:8000`;
 async function request(path, options = {}) {
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: { "Content-Type": "application/json" },
+    cache: "no-store",
     ...options,
   });
 
@@ -33,8 +34,11 @@ export const api = {
   listSandboxes: () => request("/api/sandboxes"),
   createSandbox: (data) => request("/api/sandboxes", { method: "POST", body: JSON.stringify(data) }),
   updateSandbox: (id, data) => request(`/api/sandboxes/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-  deleteSandbox: (id, requestedBy) =>
-    request(`/api/sandboxes/${id}?requested_by=${encodeURIComponent(requestedBy)}`, { method: "DELETE" }),
+  getSandboxDependencies: (id) => request(`/api/sandboxes/${id}/dependencies`, { cache: "no-store" }),
+  deleteSandbox: (id, reqBy) =>
+    request(`/api/sandboxes/${id}?requested_by=${encodeURIComponent(reqBy)}`, {
+      method: "DELETE",
+    }),
   testConnection: (data) => request("/api/sap/test-connection", { method: "POST", body: JSON.stringify(data) }),
 
   getTCodes: (sandboxId) => request(`/api/sap/${sandboxId}/tcodes`),
