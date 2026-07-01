@@ -25,7 +25,8 @@ def overview(db: Session = Depends(get_db)):
     total_programs = db.query(func.count(func.distinct(ProgramVersion.program_name))).scalar() or 0
     total_commits = db.query(func.count(ProgramVersion.id)).scalar() or 0
 
-    today_start = datetime.combine(datetime.now(timezone.utc).date(), time.min, tzinfo=timezone.utc)
+    # Calculate 'today' starting at midnight local time, converted to UTC for DB comparison
+    today_start = datetime.combine(datetime.now().date(), time.min).astimezone(timezone.utc)
     commits_today = (
         db.query(func.count(ProgramVersion.id)).filter(ProgramVersion.created_at >= today_start).scalar() or 0
     )
