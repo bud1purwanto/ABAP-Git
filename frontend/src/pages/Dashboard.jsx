@@ -43,7 +43,7 @@ export default function Dashboard({ user, onLogout }) {
           <span />
         </button>
         <span style={styles.brandIcon}>⌬</span>
-        <div style={{ flex: 1, fontSize: 14, fontWeight: 700 }}>ABAP Version Control System</div>
+        <div style={{ flex: 1, fontSize: 14, fontWeight: 700 }}>ABAP Git</div>
         <ThemeToggle />
       </div>
 
@@ -53,7 +53,7 @@ export default function Dashboard({ user, onLogout }) {
         <div style={styles.brand}>
           <span style={styles.brandIcon}>⌬</span>
           <div className="app-brand-text">
-            <div style={styles.brandTitle}>ABAP VCS</div>
+            <div style={styles.brandTitle}>ABAP Git</div>
             <div style={styles.brandSubtitle}>Version Control System</div>
           </div>
         </div>

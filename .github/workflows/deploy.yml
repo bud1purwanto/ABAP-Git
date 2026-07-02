@@ -30,6 +30,6 @@ jobs:
           pip install -r requirements.txt
           
           # Restart service systemd (Pastikan Anda sudah mengikuti setup service)
-          sudo systemctl restart abap-vcs-backend
+          sudo systemctl restart abapgit-backend
           
           echo "Deploy selesai!"
