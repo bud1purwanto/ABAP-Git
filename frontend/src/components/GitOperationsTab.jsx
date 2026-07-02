@@ -8,6 +8,8 @@ import { useToast } from "./ToastProvider";
 import SearchableDropdown from "./SearchableDropdown";
 import CompareModal from "./CompareModal";
 import DeployLiveModal from "./DeployLiveModal";
+import ScanUndeployedModal from "./ScanUndeployedModal";
+import MassDeployModal from "./MassDeployModal";
 import { useDebounce } from "../hooks/useDebounce";
 
 
@@ -26,8 +28,13 @@ export default function GitOperationsTab({ author, active }) {
 
   // Scan state
   const [isScanningProject, setIsScanningProject] = useState(false);
+  const [hasScannedUncommitted, setHasScannedUncommitted] = useState(false);
   const [scanProgress, setScanProgress] = useState("");
   const [uncommittedPrograms, setUncommittedPrograms] = useState([]);
+  
+  const [showScanUndeployedModal, setShowScanUndeployedModal] = useState(false);
+  const [undeployedPrograms, setUndeployedPrograms] = useState([]);
+  const [showMassDeployModal, setShowMassDeployModal] = useState(false);
 
   const [sapSource, setSapSource] = useState("");
   const [dbSource, setDbSource] = useState("");
@@ -222,6 +229,7 @@ export default function GitOperationsTab({ author, active }) {
     }
     
     setIsScanningProject(true);
+    setHasScannedUncommitted(false);
     setUncommittedPrograms([]);
     const pending = [];
     
@@ -243,7 +251,8 @@ export default function GitOperationsTab({ author, active }) {
         if (res.diff && res.diff.trim() !== "") {
           pending.push({
             program_name: pName,
-            tcode: p.tcode
+            tcode: p.tcode,
+            isNew: !res.version_id
           });
         }
         
@@ -266,6 +275,7 @@ export default function GitOperationsTab({ author, active }) {
     
     setUncommittedPrograms(pending);
     setIsScanningProject(false);
+    setHasScannedUncommitted(true);
     setScanProgress("");
     if (pending.length > 0) {
       toast.info(`Found ${pending.length} uncommitted program(s).`);
@@ -439,6 +449,7 @@ export default function GitOperationsTab({ author, active }) {
 
   const handleProjectChange = (val) => {
     setSelectedProjectId(val);
+    setHasScannedUncommitted(false);
     if (val) {
       const proj = projects.find(p => String(p.id) === String(val));
       if (proj && proj.sandbox_id) {
@@ -483,14 +494,31 @@ export default function GitOperationsTab({ author, active }) {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           {selectedProjectId && (
-            <button 
-              className="btn btn-primary" 
-              onClick={handleScanProject} 
-              disabled={isScanningProject || !sandboxId}
-              style={{ padding: "10px 14px", fontSize: 13, whiteSpace: "nowrap", height: "40px" }}
-            >
-              {isScanningProject ? scanProgress : "🔍 Scan Uncommitted"}
-            </button>
+            <>
+              <button 
+                className="btn btn-primary" 
+                onClick={handleScanProject} 
+                disabled={isScanningProject || !sandboxId}
+                style={{ padding: "10px 14px", fontSize: 13, whiteSpace: "nowrap", height: "40px", background: "rgba(99, 102, 241, 0.15)", color: "var(--accent-2)", border: "1px solid var(--accent-glow)" }}
+              >
+                {isScanningProject ? scanProgress : "🔍 Scan Uncommitted"}
+              </button>
+              <button
+                className="btn"
+                style={{ padding: "10px 14px", fontSize: 13, whiteSpace: "nowrap", height: "40px", background: "rgba(34, 197, 94, 0.15)", color: "#22c55e", border: "1px solid rgba(34, 197, 94, 0.3)" }}
+                onClick={() => {
+                  const hasModifiedUncommitted = uncommittedPrograms.some(p => !p.isNew);
+                  if (hasModifiedUncommitted) {
+                    toast.error("Please commit all existing changes before scanning for undeployed programs.");
+                    return;
+                  }
+                  setShowScanUndeployedModal(true);
+                }}
+                disabled={isScanningProject || !sandboxId || !hasScannedUncommitted || uncommittedPrograms.some(p => !p.isNew)}
+              >
+                🚀 Scan Undeployed
+              </button>
+            </>
           )}
           <div style={{ width: 260 }}>
             <SearchableDropdown
@@ -653,8 +681,8 @@ export default function GitOperationsTab({ author, active }) {
         </div>
 
       {uncommittedPrograms.length > 0 && (
-        <div style={{ background: "rgba(245, 158, 11, 0.1)", border: "1px solid rgba(245, 158, 11, 0.3)", borderRadius: 10, padding: 16, marginBottom: 16, animation: "fadeInScale 0.2s ease", position: "relative", zIndex: 10 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#fbbf24", marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ background: "rgba(34, 197, 94, 0.1)", border: "1px solid rgba(34, 197, 94, 0.3)", borderRadius: 10, padding: 16, marginBottom: 16, animation: "fadeInScale 0.2s ease", position: "relative", zIndex: 10 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#22c55e", marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
             <span>⚠️</span> Pending Commits ({uncommittedPrograms.length})
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -662,16 +690,45 @@ export default function GitOperationsTab({ author, active }) {
               <button 
                 key={p.program_name} 
                 className="btn" 
-                style={{ background: "rgba(245, 158, 11, 0.15)", color: "#fcd34d", border: "1px solid rgba(245, 158, 11, 0.2)", fontSize: 12, padding: "4px 10px", borderRadius: 6 }}
+                style={{ background: p.isNew ? "rgba(59, 130, 246, 0.15)" : "rgba(34, 197, 94, 0.15)", color: p.isNew ? "#60a5fa" : "#4ade80", border: `1px solid ${p.isNew ? "rgba(59, 130, 246, 0.2)" : "rgba(34, 197, 94, 0.2)"}`, fontSize: 12, padding: "4px 10px", borderRadius: 6 }}
                 onClick={() => {
                   setProgramName(p.program_name);
-                  if (p.tcode) setTCode(p.tcode);
+                  setTCode(p.tcode || "");
                   handleRead(p.program_name);
                 }}
               >
-                {p.program_name} {p.tcode && `(${p.tcode})`}
+                {p.isNew ? "✨ " : ""}{p.program_name} {p.tcode && `(${p.tcode})`}
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {undeployedPrograms.length > 0 && (
+        <div style={{ background: "rgba(245, 158, 11, 0.1)", border: "1px solid rgba(245, 158, 11, 0.3)", borderRadius: 10, padding: 16, marginBottom: 16, animation: "fadeInScale 0.2s ease", position: "relative", zIndex: 9 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#fbbf24", display: "flex", alignItems: "center", gap: 8 }}>
+              <span>🚀</span> Pending Deploy ({undeployedPrograms.length})
+            </div>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {undeployedPrograms.map((p) => (
+              <span 
+                key={p.program_name} 
+                style={{ background: "rgba(245, 158, 11, 0.15)", color: "#fcd34d", border: "1px solid rgba(245, 158, 11, 0.2)", fontSize: 12, padding: "4px 10px", borderRadius: 6, display: "inline-block" }}
+              >
+                {p.program_name} {p.tcode && `(${p.tcode})`}
+              </span>
+            ))}
+          </div>
+          <div style={{ display: "flex", marginTop: 12 }}>
+            <button
+              className="btn"
+              style={{ flex: 1, background: "rgba(245, 158, 11, 0.12)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.35)" }}
+              onClick={() => setShowMassDeployModal(true)}
+            >
+              🚀 Mass Deploy to {liveSandbox?.name || "Development"}
+            </button>
           </div>
         </div>
       )}
@@ -820,6 +877,35 @@ export default function GitOperationsTab({ author, active }) {
         author={author}
         onClose={() => setShowDeployLiveModal(false)}
         onDeploySuccess={handleDeploySuccess}
+      />
+      
+      <ScanUndeployedModal
+        open={showScanUndeployedModal}
+        projectId={selectedProjectId}
+        author={author}
+        onClose={() => setShowScanUndeployedModal(false)}
+        onScanSuccess={(undeployed) => {
+          setUndeployedPrograms(undeployed);
+          if (undeployed.length === 0) {
+            toast.success("All programs in this project are already deployed to Live!");
+          } else {
+            toast.info(`Found ${undeployed.length} undeployed program(s).`);
+          }
+        }}
+      />
+      
+      <MassDeployModal
+        open={showMassDeployModal}
+        projectId={selectedProjectId}
+        programNames={undeployedPrograms.map(p => p.program_name)}
+        serverName={liveSandbox?.name || "Development"}
+        author={author}
+        onClose={() => setShowMassDeployModal(false)}
+        onDeploySuccess={() => {
+          toast.success("Mass deploy successful!");
+          setUndeployedPrograms([]); // Clear pending deploy
+          handleFetch(); // Refresh status
+        }}
       />
     </div>
   );

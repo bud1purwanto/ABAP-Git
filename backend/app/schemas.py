@@ -90,6 +90,23 @@ class SapReadResponse(BaseModel):
     includes: list[str] = []
 
 
+class DeployLiveRequest(BaseModel):
+    program_name: str
+    version_id: int
+    author: str | None = "system"
+
+
+class ScanUndeployedRequest(BaseModel):
+    project_id: int
+    author: str | None = "system"
+
+
+class MassDeployRequest(BaseModel):
+    project_id: int
+    program_names: list[str]
+    author: Optional[str] = "system"
+
+
 class SapWriteRequest(BaseModel):
     program_name: str
     sandbox_id: int

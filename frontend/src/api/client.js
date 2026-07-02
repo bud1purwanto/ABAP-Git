@@ -51,6 +51,8 @@ export const api = {
     request(`/api/sap/${sandboxId}/lock-check?program=${encodeURIComponent(program)}`),
   validateLiveDeployment: (payload) => request("/api/sap/validate_live_deployment", { method: "POST", body: JSON.stringify(payload) }),
   deployToLive: (payload) => request("/api/sap/deploy_live", { method: "POST", body: JSON.stringify(payload) }),
+  scanUndeployed: (payload) => request("/api/sap/scan_undeployed", { method: "POST", body: JSON.stringify(payload) }),
+  massDeployLive: (payload) => request("/api/sap/mass_deploy_live", { method: "POST", body: JSON.stringify(payload) }),
   
   // Projects
   listProjects: () => request("/api/projects", { cache: "no-store" }),

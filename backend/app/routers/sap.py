@@ -4,11 +4,14 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from sqlalchemy import desc
+
 from app.database import get_db
 from app.models.sandbox import Sandbox
 from app.models.program_version import ProgramVersion
 from app.models.activity_log import ActivityLog
-from app.schemas import SapReadResponse, SapWriteRequest, SapTestConnectionRequest
+from app.models.project import Project
+from app.schemas import SapReadResponse, SapWriteRequest, SapTestConnectionRequest, ScanUndeployedRequest, MassDeployRequest
 from pydantic import BaseModel
 from app.services import sap_service
 
@@ -62,9 +65,9 @@ def read_from_sap(
     db.add(log)
     db.commit()
 
-    # Extract includes from SAP source code
+    # Extract includes from SAP source code, but only custom ones (Z* or Y*)
     include_matches = re.findall(r'^\s*INCLUDE\s+([A-Z0-9_]+)\s*\.', sap_source, re.IGNORECASE | re.MULTILINE)
-    includes = list(set(inc.upper() for inc in include_matches))
+    includes = list(set(inc.upper() for inc in include_matches if inc.upper().startswith("Z") or inc.upper().startswith("Y")))
 
     return SapReadResponse(
         program_name=program_name,
@@ -517,3 +520,114 @@ def test_connection(payload: SapTestConnectionRequest, db: Session = Depends(get
         return {"passed": True, "message": "Connection successful"}
     except Exception as exc:
         return {"passed": False, "message": str(exc)}
+
+
+@router.post("/scan_undeployed")
+def scan_undeployed(payload: ScanUndeployedRequest, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == payload.project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    live_sandbox = db.query(Sandbox).filter(Sandbox.environment == "DEV").first()
+    if not live_sandbox:
+        raise HTTPException(status_code=400, detail="No Development server configured.")
+
+    undeployed_programs = []
+    scanned_set = set()
+    queue = [{"name": p.program_name, "tcode": p.tcode} for p in project.programs]
+
+    while queue:
+        item = queue.pop(0)
+        pname = item["name"]
+        
+        if pname.upper() in scanned_set:
+            continue
+        scanned_set.add(pname.upper())
+
+        # Compare latest DB version with DEV server early to skip uncommitted programs
+        latest_version = db.query(ProgramVersion).filter(
+            ProgramVersion.program_name == pname,
+            ProgramVersion.sandbox_name == project.sandbox.name
+        ).order_by(desc(ProgramVersion.created_at)).first()
+
+        if not latest_version:
+            continue
+
+        # Check live deployment rules
+        try:
+            checks = sap_service.check_live_deployment_rules_sequential(live_sandbox, pname, payload.author)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Validation failed for {pname}: {exc}")
+
+        failed_checks = [c for c in checks if not c["passed"]]
+        if failed_checks:
+            return {
+                "status": "failed",
+                "program_name": pname,
+                "tcode": item["tcode"],
+                "failed_rule": failed_checks[0]["key"],
+                "message": failed_checks[0]["message"]
+            }
+
+        try:
+            dev_source = sap_service.read_program(live_sandbox, pname)
+        except Exception:
+            continue
+
+        # Extract custom includes (Z* or Y*)
+        include_matches = re.findall(r'^\s*INCLUDE\s+([A-Z0-9_]+)\s*\.', dev_source, re.IGNORECASE | re.MULTILINE)
+        for inc in include_matches:
+            inc_upper = inc.upper()
+            if (inc_upper.startswith("Z") or inc_upper.startswith("Y")) and inc_upper not in scanned_set:
+                queue.append({"name": inc_upper, "tcode": None})
+
+        if _diff(latest_version.source_code, dev_source).strip() != "":
+            undeployed_programs.append({
+                "program_name": pname,
+                "tcode": item["tcode"]
+            })
+
+    return {
+        "status": "success",
+        "undeployed": undeployed_programs
+    }
+
+
+@router.post("/mass_deploy_live")
+def mass_deploy_to_live(payload: MassDeployRequest, db: Session = Depends(get_db)):
+    live_sandbox = db.query(Sandbox).filter(Sandbox.environment == "DEV").first()
+    if not live_sandbox:
+        raise HTTPException(status_code=400, detail="No Development server configured.")
+
+    project = db.query(Project).filter(Project.id == payload.project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    results = []
+    
+    for prog_name in payload.program_names:
+        version = db.query(ProgramVersion).filter(
+            ProgramVersion.program_name == prog_name,
+            ProgramVersion.sandbox_name == project.sandbox.name
+        ).order_by(desc(ProgramVersion.created_at)).first()
+        
+        if not version:
+            continue
+
+        try:
+            sap_service.write_program(live_sandbox, prog_name, version.source_code)
+            
+            log = ActivityLog(
+                action="DEPLOY_LIVE",
+                username=payload.author or "system",
+                program_name=prog_name,
+                sandbox_name=live_sandbox.name,
+                detail=f"Mass deployed {prog_name} (v{version.version_number}) to Live Server '{live_sandbox.name}'",
+            )
+            db.add(log)
+            results.append({"program": prog_name, "status": "success"})
+        except Exception as exc:
+            results.append({"program": prog_name, "status": "failed", "error": str(exc)})
+
+    db.commit()
+    return {"status": "ok", "results": results}
