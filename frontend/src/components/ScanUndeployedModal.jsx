@@ -79,19 +79,23 @@ export default function ScanUndeployedModal({ open, projectId, author, onClose, 
 
   useEffect(() => {
     if (open) {
+      let isCancelled = false;
       setRuleStatuses(Object.fromEntries(ALL_RULES.map((r) => [r.key, { status: "pending", message: "" }])));
       setPhase("checking");
       
       // Simulate checking animation visually before API returns
       const simTimer = setTimeout(() => {
-        setRuleStatuses(prev => ({
-          ...prev,
-          multiple_logon: { status: "checking", message: "" }
-        }));
+        if (!isCancelled) {
+          setRuleStatuses(prev => ({
+            ...prev,
+            multiple_logon: { status: "checking", message: "" }
+          }));
+        }
       }, 100);
 
       api.scanUndeployed({ project_id: Number(projectId), author })
         .then(async (res) => {
+          if (isCancelled) return;
           if (res.status === "failed") {
             // Found a failed rule
             const failedRuleIndex = ALL_RULES.findIndex(r => r.key === res.failed_rule);
@@ -104,20 +108,24 @@ export default function ScanUndeployedModal({ open, projectId, author, onClose, 
             };
 
             // Animate passing the rules before the failed one
-            let currentStatuses = { ...ruleStatuses };
             for (let i = 0; i < failedRuleIndex; i++) {
+              if (isCancelled) return;
               const rKey = ALL_RULES[i].key;
-              currentStatuses = { ...currentStatuses, [rKey]: { status: "passed", message: successMessages[rKey] || "OK" } };
-              setRuleStatuses(currentStatuses);
-              await new Promise(r => setTimeout(r, 400));
+              const nextKey = ALL_RULES[i + 1]?.key;
+              setRuleStatuses(prev => {
+                const next = { ...prev, [rKey]: { status: "passed", message: successMessages[rKey] || "OK" } };
+                if (nextKey) next[nextKey] = { status: "checking", message: "" };
+                return next;
+              });
+              await new Promise(r => setTimeout(r, 450));
             }
+            if (isCancelled) return;
             
             // Show the failed rule
-            currentStatuses = { 
-              ...currentStatuses, 
+            setRuleStatuses(prev => ({
+              ...prev,
               [res.failed_rule]: { status: "failed", message: `[${res.program_name}] ${res.message}` } 
-            };
-            setRuleStatuses(currentStatuses);
+            }));
             setPhase("failed");
           } else {
             const successMessages = {
@@ -128,13 +136,18 @@ export default function ScanUndeployedModal({ open, projectId, author, onClose, 
             };
 
             // Success - animate all rules passing
-            let currentStatuses = { ...ruleStatuses };
             for (let i = 0; i < ALL_RULES.length; i++) {
+              if (isCancelled) return;
               const rKey = ALL_RULES[i].key;
-              currentStatuses = { ...currentStatuses, [rKey]: { status: "passed", message: successMessages[rKey] || "OK" } };
-              setRuleStatuses(currentStatuses);
-              await new Promise(r => setTimeout(r, 400));
+              const nextKey = ALL_RULES[i + 1]?.key;
+              setRuleStatuses(prev => {
+                const next = { ...prev, [rKey]: { status: "passed", message: successMessages[rKey] || "OK" } };
+                if (nextKey) next[nextKey] = { status: "checking", message: "" };
+                return next;
+              });
+              await new Promise(r => setTimeout(r, 450));
             }
+            if (isCancelled) return;
             
             setTimeout(() => {
               onScanSuccess(res.undeployed);
@@ -143,6 +156,7 @@ export default function ScanUndeployedModal({ open, projectId, author, onClose, 
           }
         })
         .catch((err) => {
+          if (isCancelled) return;
           setPhase("failed");
           setRuleStatuses(prev => ({
             ...prev,
@@ -150,7 +164,10 @@ export default function ScanUndeployedModal({ open, projectId, author, onClose, 
           }));
         });
 
-      return () => clearTimeout(simTimer);
+      return () => {
+        isCancelled = true;
+        clearTimeout(simTimer);
+      };
     }
   }, [open, projectId, author, onClose, onScanSuccess]);
 
