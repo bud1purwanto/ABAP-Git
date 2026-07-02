@@ -131,7 +131,9 @@ export default function CompareServerTab({ active }) {
           const left = byRankDesc[0];
           if (left) {
             setLeftId(left.id);
-            const below = byRankDesc.find((s) => rank(s) < rank(left));
+            const below = [...sbs]
+              .filter((s) => rank(s) < rank(left))
+              .sort((a, b) => a.id - b.id)[0]; // Oldest lower server first
             if (below) setRightId(below.id);
           }
         }).catch((e) => toast.error(e.message)),
@@ -193,16 +195,18 @@ export default function CompareServerTab({ active }) {
     setLeftId(val);
     resetCompare();
     const newLeft = safeSandboxes.find((s) => String(s.id) === String(val));
+    const selRight = safeSandboxes.find((s) => String(s.id) === String(rightId));
     if (newLeft) {
-      // Automatically select the next server in the hierarchy (highest rank below newLeft)
-      const below = [...safeSandboxes]
-        .sort((a, b) => rank(b) - rank(a)) // Sort descending by rank
-        .find((s) => rank(s) < rank(newLeft));
-      
-      if (below) {
-        setRightId(below.id);
-      } else {
-        setRightId("");
+      // If the currently selected right server is no longer valid (i.e. not lower rank), auto-select one.
+      if (selRight && rank(selRight) >= rank(newLeft)) {
+        const below = sandboxes
+          .filter((s) => rank(s) < rank(newLeft))
+          .sort((a, b) => a.id - b.id)[0]; // Oldest lower server first
+        if (below) {
+          setRightId(below.id);
+        } else {
+          setRightId("");
+        }
       }
     }
   }
