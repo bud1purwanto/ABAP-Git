@@ -36,6 +36,7 @@ def run_lightweight_migrations():
         "UPDATE sandboxes SET is_live = (environment = 'DEV')",
         "ALTER TABLE program_versions ADD COLUMN IF NOT EXISTS sandbox_name VARCHAR(100)",
         "ALTER TABLE sandboxes ADD COLUMN IF NOT EXISTS allow_multiple_logon BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE projects ADD COLUMN IF NOT EXISTS created_by VARCHAR(100)",
     ]
     with engine.connect() as conn:
         for statement in statements:

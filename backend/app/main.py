@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, SessionLocal, engine, run_lightweight_migrations
 from app.models.user import User
-from app.routers import sandboxes, sap, ai, git_ops, auth, activity, users, stats
+from app.models.project import Project, ProjectProgram
+from app.routers import sandboxes, sap, ai, git_ops, auth, activity, users, stats, projects
 from app.services.security import hash_password
 
 Base.metadata.create_all(bind=engine)
@@ -51,6 +52,7 @@ app.include_router(git_ops.router)
 app.include_router(activity.router)
 app.include_router(users.router)
 app.include_router(stats.router)
+app.include_router(projects.router)
 
 
 @app.get("/api/health")

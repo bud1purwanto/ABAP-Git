@@ -2,7 +2,7 @@ export default function ConfirmModal({ open, title, message, onConfirm, onCancel
   if (!open) return null;
 
   return (
-    <div style={styles.overlay} onClick={onCancel}>
+    <div style={styles.overlay}>
       <div className="glass-panel" style={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div style={styles.icon}>⚠</div>
         <h3 style={styles.title}>{title}</h3>

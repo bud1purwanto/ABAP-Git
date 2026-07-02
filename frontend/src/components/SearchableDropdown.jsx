@@ -4,6 +4,8 @@ export default function SearchableDropdown({
   label,
   value,
   onChange,
+  onSelect,
+  onEnter,
   options, // Array of strings or objects {label, value}
   placeholder,
   isLoading = false,
@@ -55,7 +57,8 @@ export default function SearchableDropdown({
 
   const handleSelect = (val, opt) => {
     setSearch(opt.display || opt.label);
-    onChange(val);
+    if (onChange) onChange(val);
+    if (onSelect) onSelect(val, opt);
     setIsOpen(false);
   };
 
@@ -71,10 +74,17 @@ export default function SearchableDropdown({
           onChange={(e) => {
             const val = e.target.value;
             setSearch(val);
-            if (freeSolo) {
+            if (freeSolo && onChange) {
               onChange(val.toUpperCase());
             }
             if (!isOpen) setIsOpen(true);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              if (onEnter) onEnter(search);
+              setIsOpen(false);
+            }
           }}
           onFocus={() => setIsOpen(true)}
           placeholder={isLoading ? "Loading..." : placeholder}

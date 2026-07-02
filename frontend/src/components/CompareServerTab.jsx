@@ -53,12 +53,15 @@ function TransportBox({ info, environment }) {
   );
 }
 
-export default function CompareServerTab() {
+export default function CompareServerTab({ active }) {
   const [sandboxes, setSandboxes] = useState([]);
   const [leftId, setLeftId] = useState("");
   const [rightId, setRightId] = useState("");
   const [programName, setProgramName] = useState("");
   const [tcode, setTCode] = useState("");
+
+  const [projects, setProjects] = useState([]);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
 
   // SAP metadata from the LEFT (reference) server
   const [sapTCodes, setSapTCodes] = useState([]);
@@ -117,22 +120,29 @@ export default function CompareServerTab() {
     : [];
 
   useEffect(() => {
-    api
-      .listSandboxes()
-      .then((sbs) => {
-        setSandboxes(sbs);
-        // Default: left = highest-rank server, right = highest server below it.
-        const byRankDesc = [...sbs].sort((a, b) => rank(b) - rank(a));
-        const left = byRankDesc[0];
-        if (left) {
-          setLeftId(left.id);
-          const below = byRankDesc.find((s) => rank(s) < rank(left));
-          if (below) setRightId(below.id);
-        }
-      })
-      .catch((e) => toast.error(e.message))
-      .finally(() => setIsInitialLoad(false));
-  }, []);
+    if (active) {
+      Promise.all([
+        api.listSandboxes().then((sbs) => {
+          setSandboxes(sbs);
+          // Default: left = highest-rank server, right = highest server below it.
+          const byRankDesc = [...sbs].sort((a, b) => rank(b) - rank(a));
+          const left = byRankDesc[0];
+          if (left) {
+            setLeftId(left.id);
+            const below = byRankDesc.find((s) => rank(s) < rank(left));
+            if (below) setRightId(below.id);
+          }
+        }).catch((e) => toast.error(e.message)),
+        api.listProjects().then(setProjects).catch(() => {})
+      ]).finally(() => setIsInitialLoad(false));
+    }
+  }, [active]);
+
+  useEffect(() => {
+    if (selectedProjectId && !projects.some(p => String(p.id) === String(selectedProjectId))) {
+      setSelectedProjectId("");
+    }
+  }, [projects, selectedProjectId]);
 
   // Fetch metadata from the LEFT server
   useEffect(() => {
@@ -260,14 +270,28 @@ export default function CompareServerTab() {
     return <LoadingSpinner message="Loading compare..." />;
   }
 
+  const currentProject = projects.find(p => String(p.id) === String(selectedProjectId));
+  const availableSapPrograms = currentProject
+    ? Array.from(new Set(currentProject.programs.map(sp => sp.program_name)))
+    : sapPrograms;
+
+  const availableSapTCodes = currentProject
+    ? currentProject.programs
+        .filter(sp => sp.tcode)
+        .map(sp => {
+          const match = sapTCodes.find(t => t.tcode === sp.tcode);
+          return { tcode: sp.tcode, program: sp.program_name, description: match?.description || "" };
+        })
+    : sapTCodes;
+
   const programOptions = tcode
     ? [
-        ...(sapTCodes.find((t) => t.tcode === tcode)?.program
-          ? [sapTCodes.find((t) => t.tcode === tcode).program]
+        ...(availableSapTCodes.find((t) => t.tcode === tcode)?.program
+          ? [availableSapTCodes.find((t) => t.tcode === tcode).program]
           : []),
         ...sapProgramIncludes,
       ]
-    : sapPrograms;
+    : availableSapPrograms;
 
   const dispLeft = isSwapped ? selectedRight : selectedLeft;
   const dispRight = isSwapped ? selectedLeft : selectedRight;
@@ -276,13 +300,38 @@ export default function CompareServerTab() {
   const dispLeftSource = isSwapped ? rightSource : leftSource;
   const dispRightSource = isSwapped ? leftSource : rightSource;
 
+  const handleProjectChange = (val) => {
+    setSelectedProjectId(val);
+    if (val) {
+      setProgramName("");
+      setTCode("");
+      resetCompare();
+    }
+  };
+
   return (
     <div className="page-padding" style={styles.container}>
-      <h2 style={styles.heading}>Compare Server</h2>
-      <p style={styles.subheading}>
-        Compare a program between two servers side by side. The right server can only be one that sits
-        lower in the promotion chain (Sandbox → Development → QA → Production). Read-only — nothing is changed.
-      </p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+        <div>
+          <h2 style={styles.heading}>Compare Server</h2>
+          <p style={styles.subheading}>
+            Compare a program between two servers side by side. The right server can only be one that sits
+            lower in the promotion chain (Sandbox → Development → QA → Production). Read-only — nothing is changed.
+          </p>
+        </div>
+        <div style={{ width: 260 }}>
+          <SearchableDropdown
+            placeholder="Filter by Project..."
+            value={selectedProjectId}
+            onChange={handleProjectChange}
+            options={[{ label: "All Projects", value: "" }, ...projects.map((p) => ({
+              label: p.name,
+              value: String(p.id),
+            }))]}
+            freeSolo={false}
+          />
+        </div>
+      </div>
 
       <div className="glass-panel" style={{ ...styles.controls, position: "relative", zIndex: 30 }}>
         <div className="controls-row">
@@ -331,7 +380,7 @@ export default function CompareServerTab() {
               placeholder="Select or type T-Code..."
               value={tcode}
               onChange={handleTCodeChange}
-              options={sapTCodes.map((t) => ({ label: `${t.tcode} — ${t.description || t.program}`, value: t.tcode, display: t.tcode }))}
+              options={availableSapTCodes.map((t) => ({ label: `${t.tcode} — ${t.description || t.program}`, value: t.tcode, display: t.tcode }))}
               isLoading={isLoadingSapMeta}
               disabled={!leftId}
             />

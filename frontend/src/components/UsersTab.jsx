@@ -198,7 +198,7 @@ export default function UsersTab({ currentUser }) {
       />
 
       {resetTarget && (
-        <div style={styles.modalOverlay} onClick={() => setResetTarget(null)}>
+        <div style={styles.modalOverlay}>
           <div className="glass-panel" style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ margin: "0 0 8px", fontSize: 16, fontWeight: 700 }}>
               Reset Password — {resetTarget.username}

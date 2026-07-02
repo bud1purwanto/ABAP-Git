@@ -162,7 +162,7 @@ export default function DeployLiveModal({ open, programName, serverName, version
   const deployed = phase === "deployed";
 
   return (
-    <div style={styles.overlay} onClick={phase === "idle" ? onClose : undefined}>
+    <div style={styles.overlay}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
 
         {/* Header */}

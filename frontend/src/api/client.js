@@ -49,9 +49,24 @@ export const api = {
   },
   checkLock: (sandboxId, program) =>
     request(`/api/sap/${sandboxId}/lock-check?program=${encodeURIComponent(program)}`),
-  validateLiveDeployment: (data) => request("/api/sap/validate_live_deployment", { method: "POST", body: JSON.stringify(data) }),
-  deployToLive: (data) => request("/api/sap/deploy_live", { method: "POST", body: JSON.stringify(data) }),
-
+  validateLiveDeployment: (payload) => request("/api/sap/validate_live_deployment", { method: "POST", body: JSON.stringify(payload) }),
+  deployToLive: (payload) => request("/api/sap/deploy_live", { method: "POST", body: JSON.stringify(payload) }),
+  
+  // Projects
+  listProjects: () => request("/api/projects", { cache: "no-store" }),
+  getProject: (id) => request(`/api/projects/${id}`, { cache: "no-store" }),
+  createProject: (payload) => request("/api/projects", { method: "POST", body: JSON.stringify(payload) }),
+  updateProject: (id, payload) => request(`/api/projects/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  deleteProject: (id, author) => {
+    const params = new URLSearchParams();
+    if (author) params.append("author", author);
+    return request(`/api/projects/${id}?${params.toString()}`, { method: "DELETE" });
+  },
+  copyProject: (id, targetSandboxId, author) => {
+    const params = new URLSearchParams({ target_sandbox_id: targetSandboxId });
+    if (author) params.append("author", author);
+    return request(`/api/projects/${id}/copy?${params.toString()}`, { method: "POST" });
+  },
 
   // AuthPrograms: (sandboxId) => request(`/api/sap/${sandboxId}/programs`),
   getPrograms: (sandboxId) => request(`/api/sap/${sandboxId}/programs`),

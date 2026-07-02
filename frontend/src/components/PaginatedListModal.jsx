@@ -56,7 +56,7 @@ export default function PaginatedListModal({ open, title, onClose, fetchData, re
   if (!open) return null;
 
   return (
-    <div style={styles.overlay} onClick={onClose}>
+    <div style={styles.overlay}>
       <div className="glass-panel" style={styles.modal} onClick={e => e.stopPropagation()}>
         <div style={styles.header}>
           <h3 style={styles.title}>{title}</h3>

@@ -21,7 +21,7 @@ export default function FullscreenDiffModal({
   if (!open) return null;
 
   return (
-    <div style={styles.modalOverlay} onClick={onClose}>
+    <div style={styles.modalOverlay}>
       <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
         <div style={styles.header}>
           <h2 style={styles.title}>{title}</h2>

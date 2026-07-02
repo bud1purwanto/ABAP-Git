@@ -42,7 +42,7 @@ export default function ChangePasswordModal({ open, onClose, username }) {
   }
 
   return (
-    <div style={styles.overlay} onClick={handleClose}>
+    <div style={styles.overlay}>
       <div className="glass-panel" style={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div style={styles.icon}>🔑</div>
         <h3 style={styles.title}>Change Password</h3>

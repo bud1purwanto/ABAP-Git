@@ -6,7 +6,7 @@ import ConfirmModal from "./ConfirmModal";
 import LoadingSpinner from "./LoadingSpinner";
 import CompareModal from "./CompareModal";
 
-export default function GitLogTab({ currentUser }) {
+export default function GitLogTab({ currentUser, active }) {
   const username = currentUser?.username;
   const isSuperAdmin = currentUser?.role === "super_admin";
 
@@ -23,6 +23,9 @@ export default function GitLogTab({ currentUser }) {
   const [history, setHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+
+  const [projects, setProjects] = useState([]);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
 
   // Modals
   const [showRenameModal, setShowRenameModal] = useState(false);
@@ -46,21 +49,28 @@ export default function GitLogTab({ currentUser }) {
   const regularSandboxes = safeSandboxes.filter((s) => s.environment === "SANDBOX");
 
   useEffect(() => {
-    api
-      .listSandboxes()
-      .then((sbs) => {
-        setSandboxes(sbs);
-        const regular = sbs.filter((s) => s.environment === "SANDBOX");
-        if (regular.length > 0) {
-          const oldest = [...regular].sort(
-            (a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)
-          )[0];
-          setSandboxId(oldest.id);
-        }
-      })
-      .catch((e) => toast.error(e.message))
-      .finally(() => setIsInitialLoad(false));
-  }, []);
+    if (active) {
+      Promise.all([
+        api.listSandboxes().then((sbs) => {
+          setSandboxes(sbs);
+          const regular = sbs.filter((s) => s.environment === "SANDBOX");
+          if (regular.length > 0) {
+            const oldest = [...regular].sort(
+              (a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)
+            )[0];
+            setSandboxId(oldest.id);
+          }
+        }).catch((e) => toast.error(e.message)),
+        api.listProjects().then(setProjects).catch(() => {})
+      ]).finally(() => setIsInitialLoad(false));
+    }
+  }, [active]);
+
+  useEffect(() => {
+    if (selectedProjectId && !projects.some(p => String(p.id) === String(selectedProjectId))) {
+      setSelectedProjectId("");
+    }
+  }, [projects, selectedProjectId]);
 
   // Fetch SAP metadata when sandbox changes
   useEffect(() => {
@@ -238,12 +248,54 @@ export default function GitLogTab({ currentUser }) {
     return <LoadingSpinner message="Loading git log..." />;
   }
 
+  const handleProjectChange = (val) => {
+    setSelectedProjectId(val);
+    if (val) {
+      const proj = projects.find(p => String(p.id) === String(val));
+      if (proj && proj.sandbox_id) {
+        setSandboxId(String(proj.sandbox_id));
+        setProgramName("");
+        setTCode("");
+      }
+    }
+  };
+
+  const currentProject = projects.find(p => String(p.id) === String(selectedProjectId));
+  const availableSapPrograms = currentProject
+    ? Array.from(new Set(currentProject.programs.map(sp => sp.program_name)))
+    : sapPrograms;
+
+  const availableSapTCodes = currentProject
+    ? currentProject.programs
+        .filter(sp => sp.tcode)
+        .map(sp => {
+          const match = sapTCodes.find(t => t.tcode === sp.tcode);
+          return { tcode: sp.tcode, program: sp.program_name, description: match?.description || "" };
+        })
+    : sapTCodes;
+
   return (
     <div className="page-padding" style={styles.container}>
-      <h2 style={styles.heading}>Git Log &amp; Setting</h2>
-      <p style={styles.subheading}>
-        Browse a program's commit history, edit or delete your own commit messages, and rename programs.
-      </p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+        <div>
+          <h2 style={styles.heading}>Git Log &amp; Setting</h2>
+          <p style={styles.subheading}>
+            Browse a program's commit history, edit or delete your own commit messages, and rename programs.
+          </p>
+        </div>
+        <div style={{ width: 260 }}>
+          <SearchableDropdown
+            placeholder="Filter by Project..."
+            value={selectedProjectId}
+            onChange={handleProjectChange}
+            options={[{ label: "All Projects", value: "" }, ...projects.map((p) => ({
+              label: p.name,
+              value: String(p.id),
+            }))]}
+            freeSolo={false}
+          />
+        </div>
+      </div>
 
       <div className="glass-panel" style={styles.controls}>
         <div className="controls-row" style={{ position: "relative", zIndex: 30 }}>
@@ -253,10 +305,10 @@ export default function GitLogTab({ currentUser }) {
               placeholder="Select server..."
               value={sandboxId}
               onChange={(val) => setSandboxId(val)}
-              options={regularSandboxes.map((sb) => ({
-                label: `${sb.name} (${sb.environment})`,
+              options={[{ label: "All Servers", value: "" }, ...regularSandboxes.map((sb) => ({
+                label: sb.name,
                 value: String(sb.id),
-              }))}
+              }))]}
               freeSolo={false}
             />
           </div>
@@ -269,7 +321,7 @@ export default function GitLogTab({ currentUser }) {
               placeholder="Select or type T-Code..."
               value={tcode}
               onChange={handleTCodeChange}
-              options={sapTCodes.map((t) => ({ label: `${t.tcode} — ${t.description || t.program}`, value: t.tcode, display: t.tcode }))}
+              options={availableSapTCodes.map((t) => ({ label: `${t.tcode} — ${t.description || t.program}`, value: t.tcode, display: t.tcode }))}
               isLoading={isLoadingSapMeta}
               disabled={!sandboxId}
             />
@@ -283,12 +335,12 @@ export default function GitLogTab({ currentUser }) {
               options={
                 tcode
                   ? [
-                      ...(sapTCodes.find((t) => t.tcode === tcode)?.program
-                        ? [sapTCodes.find((t) => t.tcode === tcode).program]
+                      ...(availableSapTCodes.find((t) => t.tcode === tcode)?.program
+                        ? [availableSapTCodes.find((t) => t.tcode === tcode).program]
                         : []),
                       ...sapProgramIncludes,
                     ]
-                  : sapPrograms
+                  : availableSapPrograms
               }
               isLoading={isLoadingSapMeta}
               disabled={!sandboxId}
@@ -388,7 +440,7 @@ export default function GitLogTab({ currentUser }) {
 
       {/* Rename Modal */}
       {showRenameModal && (
-        <div style={styles.modalOverlay} onClick={() => !renameBusy && setShowRenameModal(false)}>
+        <div style={styles.modalOverlay}>
           <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <h3 style={styles.modalTitle}>Rename Program</h3>
             <p style={styles.modalHint}>
@@ -417,7 +469,7 @@ export default function GitLogTab({ currentUser }) {
 
       {/* Edit Commit Modal */}
       {editTarget && (
-        <div style={styles.modalOverlay} onClick={() => !editBusy && setEditTarget(null)}>
+        <div style={styles.modalOverlay}>
           <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <h3 style={styles.modalTitle}>Edit Commit Message — v{editTarget.version_number}</h3>
             <textarea

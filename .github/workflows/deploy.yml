@@ -24,8 +24,12 @@ jobs:
           npm install
           npm run build
           
-          # 4. Restart Backend Service (Hapus tanda '#' jika service sudah siap)
-          # cd ../backend
-          # sudo systemctl restart abap-git-backend
+          # 4. Update Backend & Restart Service
+          cd ../backend
+          # Memastikan dependencies backend terbaru terinstal
+          pip install -r requirements.txt
+          
+          # Restart service systemd (Pastikan Anda sudah mengikuti setup service)
+          sudo systemctl restart abap-vcs-backend
           
           echo "Deploy selesai!"

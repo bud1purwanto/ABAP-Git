@@ -45,12 +45,15 @@ function TransportBox({ info, environment }) {
   );
 }
 
-export default function SyncTab({ author }) {
+export default function SyncTab({ author, active }) {
   const [sandboxes, setSandboxes] = useState([]);
   const [sourceId, setSourceId] = useState("");
   const [targetId, setTargetId] = useState("");
   const [programName, setProgramName] = useState("");
   const [tcode, setTCode] = useState("");
+
+  const [projects, setProjects] = useState([]);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
 
   // SAP metadata for the SOURCE server (the source of truth we pull from)
   const [sapTCodes, setSapTCodes] = useState([]);
@@ -105,24 +108,31 @@ export default function SyncTab({ author }) {
     (targetVal.passed === true);
 
   useEffect(() => {
-    api
-      .listSandboxes()
-      .then((sbs) => {
-        setSandboxes(sbs);
-        const sources = sbs.filter((s) => s.environment !== "SANDBOX");
-        // Default source: prefer Development, otherwise first available non-sandbox
-        const defaultSource = sources.find((s) => s.environment === "DEV") || sources[0];
-        if (defaultSource) setSourceId(defaultSource.id);
+    if (active) {
+      Promise.all([
+        api.listSandboxes().then((sbs) => {
+          setSandboxes(sbs);
+          const sources = sbs.filter((s) => s.environment !== "SANDBOX");
+          // Default source: prefer Development, otherwise first available non-sandbox
+          const defaultSource = sources.find((s) => s.environment === "DEV") || sources[0];
+          if (defaultSource) setSourceId(defaultSource.id);
 
-        const sbx = sbs.filter((s) => s.environment === "SANDBOX");
-        if (sbx.length > 0) {
-          const oldest = [...sbx].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))[0];
-          setTargetId(oldest.id);
-        }
-      })
-      .catch((e) => toast.error(e.message))
-      .finally(() => setIsInitialLoad(false));
-  }, []);
+          const sbx = sbs.filter((s) => s.environment === "SANDBOX");
+          if (sbx.length > 0) {
+            const oldest = [...sbx].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))[0];
+            setTargetId(oldest.id);
+          }
+        }).catch((e) => toast.error(e.message)),
+        api.listProjects().then(setProjects).catch(() => {})
+      ]).finally(() => setIsInitialLoad(false));
+    }
+  }, [active]);
+
+  useEffect(() => {
+    if (selectedProjectId && !projects.some(p => String(p.id) === String(selectedProjectId))) {
+      setSelectedProjectId("");
+    }
+  }, [projects, selectedProjectId]);
 
   // Fetch SAP metadata from the SOURCE server when it changes
   useEffect(() => {
@@ -255,14 +265,28 @@ export default function SyncTab({ author }) {
     selectedTarget && selectedSource
       ? `⟳ Sync ${selectedTarget.name} from ${selectedSource.name}`
       : "⟳ Sync Sandbox from Source";
+  const currentProject = projects.find(p => String(p.id) === String(selectedProjectId));
+  const availableSapPrograms = currentProject
+    ? Array.from(new Set(currentProject.programs.map(sp => sp.program_name)))
+    : sapPrograms;
+
+  const availableSapTCodes = currentProject
+    ? currentProject.programs
+        .filter(sp => sp.tcode)
+        .map(sp => {
+          const match = sapTCodes.find(t => t.tcode === sp.tcode);
+          return { tcode: sp.tcode, program: sp.program_name, description: match?.description || "" };
+        })
+    : sapTCodes;
+
   const programOptions = tcode
     ? [
-        ...(sapTCodes.find((t) => t.tcode === tcode)?.program
-          ? [sapTCodes.find((t) => t.tcode === tcode).program]
+        ...(availableSapTCodes.find((t) => t.tcode === tcode)?.program
+          ? [availableSapTCodes.find((t) => t.tcode === tcode).program]
           : []),
         ...sapProgramIncludes,
       ]
-    : sapPrograms;
+    : availableSapPrograms;
 
   const dispLeftLabel = isSwapped ? selectedTarget?.name : selectedSource?.name;
   const dispLeftSubLabel = isSwapped ? "Target sandbox — current state, will be overwritten by Sync" : `${sourceEnvLabel} — source of truth, stays unchanged`;
@@ -276,13 +300,38 @@ export default function SyncTab({ author }) {
   const dispRightSource = isSwapped ? sourceSource : sandboxSource;
   const dispRightColor = isSwapped ? "#f43f5e" : "var(--accent-2)";
 
+  const handleProjectChange = (val) => {
+    setSelectedProjectId(val);
+    if (val) {
+      setProgramName("");
+      setTCode("");
+      resetCompare();
+    }
+  };
+
   return (
     <div className="page-padding" style={styles.container}>
-      <h2 style={styles.heading}>Sync</h2>
-      <p style={styles.subheading}>
-        Pull a program from a Development, QA, or Production server into a sandbox — handy when a
-        sandbox has been changed for experiments and you want to reset it to match a real environment.
-      </p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+        <div>
+          <h2 style={styles.heading}>Sync</h2>
+          <p style={styles.subheading}>
+            Pull a program from a Development, QA, or Production server into a sandbox — handy when a
+            sandbox has been changed for experiments and you want to reset it to match a real environment.
+          </p>
+        </div>
+        <div style={{ width: 260 }}>
+          <SearchableDropdown
+            placeholder="Filter by Project..."
+            value={selectedProjectId}
+            onChange={handleProjectChange}
+            options={[{ label: "All Projects", value: "" }, ...projects.map((p) => ({
+              label: p.name,
+              value: String(p.id),
+            }))]}
+            freeSolo={false}
+          />
+        </div>
+      </div>
 
       <div className="glass-panel" style={{ ...styles.controls, position: "relative", zIndex: 30 }}>
         <div className="controls-row">
@@ -339,7 +388,7 @@ export default function SyncTab({ author }) {
               placeholder="Select or type T-Code..."
               value={tcode}
               onChange={handleTCodeChange}
-              options={sapTCodes.map((t) => ({ label: `${t.tcode} — ${t.description || t.program}`, value: t.tcode, display: t.tcode }))}
+              options={availableSapTCodes.map((t) => ({ label: `${t.tcode} — ${t.description || t.program}`, value: t.tcode, display: t.tcode }))}
               isLoading={isLoadingSapMeta}
               disabled={!sourceId}
             />

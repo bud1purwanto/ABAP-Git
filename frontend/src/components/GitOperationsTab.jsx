@@ -11,7 +11,7 @@ import DeployLiveModal from "./DeployLiveModal";
 import { useDebounce } from "../hooks/useDebounce";
 
 
-export default function GitOperationsTab({ author }) {
+export default function GitOperationsTab({ author, active }) {
   const [sandboxes, setSandboxes] = useState([]);
   const [sandboxId, setSandboxId] = useState("");
   const [programName, setProgramName] = useState("");
@@ -20,6 +20,14 @@ export default function GitOperationsTab({ author }) {
 
   const [programs, setPrograms] = useState([]);
   const [programSearch, setProgramSearch] = useState("");
+
+  const [projects, setProjects] = useState([]);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+
+  // Scan state
+  const [isScanningProject, setIsScanningProject] = useState(false);
+  const [scanProgress, setScanProgress] = useState("");
+  const [uncommittedPrograms, setUncommittedPrograms] = useState([]);
 
   const [sapSource, setSapSource] = useState("");
   const [dbSource, setDbSource] = useState("");
@@ -56,19 +64,29 @@ export default function GitOperationsTab({ author }) {
   const isProdTarget = selectedSandbox?.environment === "PROD";
 
   useEffect(() => {
-    Promise.all([
-      api.listSandboxes().then((sbs) => {
-        setSandboxes(sbs);
-        const regular = sbs.filter((s) => s.environment === "SANDBOX");
-        if (regular.length > 0) {
-          const oldest = [...regular].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))[0];
-          setSandboxId(oldest.id);
-        }
-      }).catch((e) => toast.error(e.message)),
-      refreshActivity(),
-      refreshPrograms()
-    ]).finally(() => setIsInitialLoad(false));
-  }, [author]);
+    if (active) {
+      Promise.all([
+        api.listSandboxes().then((sbs) => {
+          setSandboxes(sbs);
+          const safeSandboxes = sbs || [];
+          const regular = safeSandboxes.filter((s) => s.environment === "SANDBOX");
+          if (regular.length > 0) {
+            const oldest = [...regular].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))[0];
+            setSandboxId(oldest.id);
+          }
+        }).catch((e) => toast.error(e.message)),
+        api.listProjects().then(setProjects).catch(() => {}),
+        refreshActivity(),
+        refreshPrograms()
+      ]).finally(() => setIsInitialLoad(false));
+    }
+  }, [author, active]);
+
+  useEffect(() => {
+    if (selectedProjectId && !projects.some(p => String(p.id) === String(selectedProjectId))) {
+      setSelectedProjectId("");
+    }
+  }, [projects, selectedProjectId]);
 
   // Fetch SAP Metadata when sandbox changes
   // Auto-fetch when sandbox or program changes
@@ -192,6 +210,64 @@ export default function GitOperationsTab({ author }) {
     setSelectedVersionId(versionId);
     if (!versionId || !sandboxId || !programName) return;
     await fetchAndCompare(versionId);
+    resetRead();
+  }
+
+  const handleScanProject = async () => {
+    if (!selectedProjectId) return;
+    const proj = projects.find((p) => String(p.id) === String(selectedProjectId));
+    if (!proj || !proj.programs || proj.programs.length === 0) {
+      toast.info("No programs in this project to scan.");
+      return;
+    }
+    
+    setIsScanningProject(true);
+    setUncommittedPrograms([]);
+    const pending = [];
+    let scanned = 0;
+    const total = proj.programs.length;
+    
+    for (const p of proj.programs) {
+      scanned++;
+      setScanProgress(`Scanning ${p.program_name}... (${scanned}/${total})`);
+      try {
+        const res = await api.readFromSap(p.program_name, sandboxId, undefined, author);
+        if (res.diff && res.diff.trim() !== "") {
+          pending.push({
+            program_name: p.program_name,
+            tcode: p.tcode
+          });
+        }
+      } catch (err) {
+        console.error("Failed to read", p.program_name, err);
+      }
+    }
+    
+    setUncommittedPrograms(pending);
+    setIsScanningProject(false);
+    setScanProgress("");
+    if (pending.length > 0) {
+      toast.info(`Found ${pending.length} uncommitted program(s).`);
+    } else {
+      toast.success("All programs are up to date!");
+    }
+  };
+
+  async function handleRead(progName = programName) {
+    setLoadingAction("fetch");
+    try {
+      const res = await api.readFromSap(progName, sandboxId, undefined, author);
+      setSapSource(res.sap_source);
+      setDbSource(res.db_source || "");
+      setDiff(res.diff);
+      setParentVersionHash(res.parent_version_hash);
+      if (res.tcode) setTCode(res.tcode);
+      if (res.version_id) setSelectedVersionId(res.version_id);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setLoadingAction("");
+    }
   }
 
   async function fetchAndCompare(versionId, progName = programName) {
@@ -264,7 +340,8 @@ export default function GitOperationsTab({ author }) {
         parent_version_hash: parentVersionHash,
         amend: amendCommit,
       });
-      toast.success(amendCommit ? "Amended commit successfully." : "Committed successfully to ABAP_GIT (Postgres).");
+      toast.success("Committed successfully!");
+      setUncommittedPrograms(prev => prev.filter(p => p.program_name !== programName));
       setShowCommitModal(false);
       setCommitMessage("");
       await loadHistory(programName);
@@ -339,10 +416,75 @@ export default function GitOperationsTab({ author }) {
   const canCommit = !!sapSource && isLatestVersion && hasDiff;
   const canRollback = !!selectedVersionId && hasDiff;
 
+  const handleProjectChange = (val) => {
+    setSelectedProjectId(val);
+    if (val) {
+      const proj = projects.find(p => String(p.id) === String(val));
+      if (proj && proj.sandbox_id) {
+        setSandboxId(String(proj.sandbox_id));
+      }
+    }
+  };
+
+  const currentProject = projects.find(p => String(p.id) === String(selectedProjectId));
+  const filteredProgramsList = currentProject
+    ? programs.filter(p => currentProject.programs.some(sp => sp.program_name === p.program_name))
+    : programs;
+
+  const availableSapPrograms = currentProject
+    ? Array.from(new Set(currentProject.programs.map(sp => sp.program_name)))
+    : sapPrograms;
+
+  const availableSapTCodes = currentProject
+    ? currentProject.programs
+        .filter(sp => sp.tcode)
+        .map(sp => {
+          const match = sapTCodes.find(t => t.tcode === sp.tcode);
+          return { tcode: sp.tcode, program: sp.program_name, description: match?.description || "" };
+        })
+    : sapTCodes;
+
+  const programOptions = tcode
+    ? [
+        ...(availableSapTCodes.find((t) => t.tcode === tcode)?.program
+          ? [availableSapTCodes.find((t) => t.tcode === tcode).program]
+          : []),
+        ...sapProgramIncludes,
+      ]
+    : availableSapPrograms;
+
   return (
     <div className="page-padding" style={styles.container}>
-      <h2 style={styles.heading}>Git Operations</h2>
-      <p style={styles.subheading}>Pull ABAP code from SAP, compare versions, and manage rollbacks.</p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+        <div>
+          <h2 style={styles.heading}>Git Operations</h2>
+          <p style={styles.subheading}>Pull ABAP code from SAP, compare versions, and manage rollbacks.</p>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {selectedProjectId && (
+            <button 
+              className="btn btn-primary" 
+              onClick={handleScanProject} 
+              disabled={isScanningProject || !sandboxId}
+              style={{ padding: "10px 14px", fontSize: 13, whiteSpace: "nowrap", height: "40px" }}
+            >
+              {isScanningProject ? scanProgress : "🔍 Scan Uncommitted"}
+            </button>
+          )}
+          <div style={{ width: 260 }}>
+            <SearchableDropdown
+              placeholder="Filter by Project..."
+              value={selectedProjectId}
+              onChange={handleProjectChange}
+              options={[{ label: "All Projects", value: "" }, ...projects.map((p) => ({
+                label: p.name,
+                value: String(p.id),
+              }))]}
+              freeSolo={false}
+            />
+          </div>
+        </div>
+      </div>
 
       <div className="git-ops-main-column">
         <div className="git-ops-layout" style={{ marginBottom: 20, position: "relative", zIndex: 30 }}>
@@ -358,8 +500,8 @@ export default function GitOperationsTab({ author }) {
             style={{ marginBottom: 12 }}
           />
           <div style={styles.programsList}>
-            {programs.length === 0 && <div style={styles.empty}>No programs committed yet.</div>}
-            {programs.map((p) => (
+            {filteredProgramsList.length === 0 && <div style={styles.empty}>No programs found.</div>}
+            {filteredProgramsList.map((p) => (
               <button
                 key={p.program_name}
                 onClick={() => handleSelectProgram(p.program_name)}
@@ -386,7 +528,7 @@ export default function GitOperationsTab({ author }) {
                   value={sandboxId}
                   onChange={(val) => setSandboxId(val)}
                   options={regularSandboxes.map((sb) => ({
-                    label: `${sb.name} (${sb.environment})`,
+                    label: sb.name,
                     value: String(sb.id),
                   }))}
                   freeSolo={false}
@@ -430,7 +572,7 @@ export default function GitOperationsTab({ author }) {
                   placeholder="Select or type T-Code..."
                   value={tcode}
                   onChange={handleTCodeChange}
-                  options={sapTCodes.map((t) => ({ label: `${t.tcode} — ${t.description || t.program}`, value: t.tcode, display: t.tcode }))}
+                  options={availableSapTCodes.map((t) => ({ label: `${t.tcode} — ${t.description || t.program}`, value: t.tcode, display: t.tcode }))}
                   isLoading={isLoadingSapMeta}
                   disabled={!sandboxId}
                 />
@@ -443,14 +585,7 @@ export default function GitOperationsTab({ author }) {
                   onChange={(val) => {
                     handleProgramChange(val);
                   }}
-                  options={
-                    tcode
-                      ? [
-                          ...(sapTCodes.find((t) => t.tcode === tcode)?.program ? [sapTCodes.find((t) => t.tcode === tcode).program] : []),
-                          ...sapProgramIncludes
-                        ]
-                      : sapPrograms
-                  }
+                  options={programOptions}
                   isLoading={isLoadingSapMeta}
                   disabled={!sandboxId}
                 />
@@ -496,7 +631,31 @@ export default function GitOperationsTab({ author }) {
           </div>
         </div>
 
-        <div className="diff-viewer-wrapper" style={{ marginTop: 20 }}>
+      {uncommittedPrograms.length > 0 && (
+        <div style={{ background: "rgba(245, 158, 11, 0.1)", border: "1px solid rgba(245, 158, 11, 0.3)", borderRadius: 10, padding: 16, marginBottom: 16, animation: "fadeInScale 0.2s ease", position: "relative", zIndex: 10 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#fbbf24", marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+            <span>⚠️</span> Pending Commits ({uncommittedPrograms.length})
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {uncommittedPrograms.map((p) => (
+              <button 
+                key={p.program_name} 
+                className="btn" 
+                style={{ background: "rgba(245, 158, 11, 0.15)", color: "#fcd34d", border: "1px solid rgba(245, 158, 11, 0.2)", fontSize: 12, padding: "4px 10px", borderRadius: 6 }}
+                onClick={() => {
+                  setProgramName(p.program_name);
+                  if (p.tcode) setTCode(p.tcode);
+                  handleRead(p.program_name);
+                }}
+              >
+                {p.program_name} {p.tcode && `(${p.tcode})`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+        <div className="diff-viewer-wrapper" style={{ marginTop: 20, animation: "fadeIn 0.25s ease-in-out" }}>
           <div className="glass-panel diff-panel" style={styles.diffPanel}>
             <h3 style={styles.panelTitle}>Diff Viewer</h3>
             {selectedVersion && (
@@ -541,7 +700,7 @@ export default function GitOperationsTab({ author }) {
 
       {/* Commit Message Modal */}
       {showCommitModal && (
-        <div style={styles.modalOverlay} onClick={() => setShowCommitModal(false)}>
+        <div style={styles.modalOverlay}>
           <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Commit Message</h3>

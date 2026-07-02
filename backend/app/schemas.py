@@ -183,3 +183,45 @@ class SapTestConnectionRequest(BaseModel):
     client: str
     rfc_user: str
     rfc_password: Optional[str] = None
+
+
+# --- Project Schemas ---
+
+class ProjectProgramBase(BaseModel):
+    program_name: str
+    tcode: str | None = None
+
+class ProjectProgramCreate(ProjectProgramBase):
+    pass
+
+class ProjectProgramOut(ProjectProgramBase):
+    id: int
+    project_id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class ProjectBase(BaseModel):
+    name: str
+    description: str | None = None
+    sandbox_id: int
+    created_by: str | None = None
+
+class ProjectCreate(ProjectBase):
+    programs: list[ProjectProgramCreate] = []
+
+class ProjectUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    programs: list[ProjectProgramCreate] | None = None
+    created_by: str | None = None
+
+class ProjectOut(ProjectBase):
+    id: int
+    created_at: datetime
+    programs: list[ProjectProgramOut]
+
+    class Config:
+        from_attributes = True
+

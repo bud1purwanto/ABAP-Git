@@ -5,6 +5,7 @@ import GitOperationsTab from "../components/GitOperationsTab";
 import GitLogTab from "../components/GitLogTab";
 import SyncTab from "../components/SyncTab";
 import CompareServerTab from "../components/CompareServerTab";
+import ProjectsTab from "../components/ProjectsTab";
 import UsersTab from "../components/UsersTab";
 import ThemeToggle from "../components/ThemeToggle";
 import ConfirmModal from "../components/ConfirmModal";
@@ -16,6 +17,7 @@ const TABS = [
   { id: "gitlog", label: "Git Log & Setting", icon: "🗒" },
   { id: "sync", label: "Sync", icon: "⟳" },
   { id: "compare", label: "Compare Server", icon: "⇆" },
+  { id: "projects", label: "Projects", icon: "🗂" },
   { id: "sandboxes", label: "Server", icon: "▣" },
   { id: "users", label: "Users", icon: "☺" },
 ];
@@ -133,16 +135,19 @@ export default function Dashboard({ user, onLogout }) {
           <OverviewTab username={displayName} active={activeTab === "overview"} />
         </div>
         <div style={{ display: activeTab === "git" ? "block" : "none" }}>
-          <GitOperationsTab author={user.username} />
+          <GitOperationsTab author={user.username} active={activeTab === "git"} />
         </div>
         <div style={{ display: activeTab === "gitlog" ? "block" : "none" }}>
-          <GitLogTab currentUser={user} />
+          <GitLogTab currentUser={user} active={activeTab === "gitlog"} />
         </div>
         <div style={{ display: activeTab === "sync" ? "block" : "none" }}>
-          <SyncTab author={user.username} />
+          <SyncTab author={user.username} active={activeTab === "sync"} />
         </div>
         <div style={{ display: activeTab === "compare" ? "block" : "none" }}>
-          <CompareServerTab />
+          <CompareServerTab active={activeTab === "compare"} />
+        </div>
+        <div style={{ display: activeTab === "projects" ? "block" : "none" }}>
+          <ProjectsTab active={activeTab === "projects"} author={user.username} />
         </div>
         <div style={{ display: activeTab === "sandboxes" ? "block" : "none" }}>
           <SandboxesTab currentUser={user} />
