@@ -1,4 +1,5 @@
 import difflib
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -61,6 +62,10 @@ def read_from_sap(
     db.add(log)
     db.commit()
 
+    # Extract includes from SAP source code
+    include_matches = re.findall(r'^\s*INCLUDE\s+([A-Z0-9_]+)\s*\.', sap_source, re.IGNORECASE | re.MULTILINE)
+    includes = list(set(inc.upper() for inc in include_matches))
+
     return SapReadResponse(
         program_name=program_name,
         sap_source=sap_source,
@@ -69,6 +74,7 @@ def read_from_sap(
         version_id=version.id if version else None,
         parent_version_hash=version.version_hash if version else None,
         tcode=program_tcode,
+        includes=includes,
     )
 
 

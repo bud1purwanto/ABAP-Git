@@ -224,22 +224,43 @@ export default function GitOperationsTab({ author, active }) {
     setIsScanningProject(true);
     setUncommittedPrograms([]);
     const pending = [];
-    let scanned = 0;
-    const total = proj.programs.length;
     
-    for (const p of proj.programs) {
-      scanned++;
-      setScanProgress(`Scanning ${p.program_name}... (${scanned}/${total})`);
+    const scannedSet = new Set();
+    const queue = [...proj.programs]; // array of {program_name, tcode}
+    let scannedCount = 0;
+    
+    while (queue.length > 0) {
+      const p = queue.shift();
+      const pName = p.program_name.toUpperCase();
+      if (scannedSet.has(pName)) continue;
+      scannedSet.add(pName);
+      scannedCount++;
+      
+      setScanProgress(`Scanning ${pName}... (${scannedCount}/${scannedSet.size + queue.length})`);
+      
       try {
-        const res = await api.readFromSap(p.program_name, sandboxId, undefined, author);
+        const res = await api.readFromSap(pName, sandboxId, undefined, author);
         if (res.diff && res.diff.trim() !== "") {
           pending.push({
-            program_name: p.program_name,
+            program_name: pName,
             tcode: p.tcode
           });
         }
+        
+        // Add discovered includes to the queue
+        if (res.includes && res.includes.length > 0) {
+          for (const inc of res.includes) {
+            const incUpper = inc.toUpperCase();
+            if (!scannedSet.has(incUpper) && !queue.find(q => q.program_name.toUpperCase() === incUpper)) {
+              queue.push({
+                program_name: incUpper,
+                tcode: null // Includes do not have tcodes
+              });
+            }
+          }
+        }
       } catch (err) {
-        console.error("Failed to read", p.program_name, err);
+        console.error("Failed to read", pName, err);
       }
     }
     

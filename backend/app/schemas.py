@@ -87,6 +87,7 @@ class SapReadResponse(BaseModel):
     version_id: Optional[int] = None
     parent_version_hash: Optional[str] = None
     tcode: Optional[str] = None
+    includes: list[str] = []
 
 
 class SapWriteRequest(BaseModel):
