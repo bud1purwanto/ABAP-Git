@@ -1,0 +1,31 @@
+name: Deploy to Local Linux Server
+
+on:
+  push:
+    branches:
+      - main # Workflow akan berjalan ketika ada push ke branch main
+
+jobs:
+  deploy:
+    runs-on: self-hosted # <--- INI KUNCI UTAMANYA
+    steps:
+      - name: Tarik kode terbaru dan Build
+        run: |
+          # Script ini akan langsung berjalan secara otomatis di terminal Linux Anda
+          
+          # 1. Pindah ke direktori project Anda (Sesuaikan path ini)
+          cd /var/www/ABAP-Git
+          
+          # 2. Ambil update terbaru dari GitHub
+          git pull origin main
+          
+          # 3. Build Frontend
+          cd frontend
+          npm install
+          npm run build
+          
+          # 4. Restart Backend Service (Hapus tanda '#' jika service sudah siap)
+          # cd ../backend
+          # sudo systemctl restart abap-git-backend
+          
+          echo "Deploy selesai!"
