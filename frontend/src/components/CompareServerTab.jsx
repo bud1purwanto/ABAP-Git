@@ -97,10 +97,12 @@ export default function CompareServerTab({ active }) {
   const leftVal = useServerValidation({
     serverId: leftId,
     environment: selectedLeft?.environment || "",
+    programName: programName,
   });
   const rightVal = useServerValidation({
     serverId: rightId,
     environment: selectedRight?.environment || "",
+    programName: programName,
   });
 
   const serversOk = (leftVal.passed === true) && (rightVal.passed === true);
